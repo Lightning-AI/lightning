@@ -472,11 +472,11 @@ def test_trainer_model_hook_system_fit(override_on_validation_model_train, autom
     expected = [
         {"name": "configure_callbacks"},
         {"name": "prepare_data"},
+        {"name": "configure_model"},
         {"name": "Callback.setup", "args": (trainer, model), "kwargs": {"stage": "fit"}},
         {"name": "setup", "kwargs": {"stage": "fit"}},
         # DeepSpeed needs the batch size to figure out throughput logging
         *([{"name": "train_dataloader"}] if using_deepspeed else []),
-        {"name": "configure_model"},
         {"name": "configure_optimizers"},
         {"name": "Callback.on_fit_start", "args": (trainer, model)},
         {"name": "on_fit_start"},
@@ -571,9 +571,9 @@ def test_trainer_model_hook_system_fit_no_val_and_resume_max_epochs(tmp_path):
     expected = [
         {"name": "configure_callbacks"},
         {"name": "prepare_data"},
+        {"name": "configure_model"},
         {"name": "Callback.setup", "args": (trainer, model), "kwargs": {"stage": "fit"}},
         {"name": "setup", "kwargs": {"stage": "fit"}},
-        {"name": "configure_model"},
         {"name": "on_load_checkpoint", "args": (loaded_ckpt,)},
         {"name": "Callback.on_load_checkpoint", "args": (trainer, model, loaded_ckpt)},
         {"name": "Callback.load_state_dict", "args": ({"foo": True},)},
@@ -651,9 +651,9 @@ def test_trainer_model_hook_system_fit_no_val_and_resume_max_steps(tmp_path):
     expected = [
         {"name": "configure_callbacks"},
         {"name": "prepare_data"},
+        {"name": "configure_model"},
         {"name": "Callback.setup", "args": (trainer, model), "kwargs": {"stage": "fit"}},
         {"name": "setup", "kwargs": {"stage": "fit"}},
-        {"name": "configure_model"},
         {"name": "on_load_checkpoint", "args": (loaded_ckpt,)},
         {"name": "Callback.on_load_checkpoint", "args": (trainer, model, loaded_ckpt)},
         {"name": "Callback.load_state_dict", "args": ({"foo": True},)},
@@ -719,9 +719,9 @@ def test_trainer_model_hook_system_eval(tmp_path, override_on_x_model_train, bat
     expected = [
         {"name": "configure_callbacks"},
         {"name": "prepare_data"},
+        {"name": "configure_model"},
         {"name": "Callback.setup", "args": (trainer, model), "kwargs": {"stage": verb}},
         {"name": "setup", "kwargs": {"stage": verb}},
-        {"name": "configure_model"},
         {"name": "zero_grad"},
         *(hooks if batches else []),
         {"name": "Callback.teardown", "args": (trainer, model), "kwargs": {"stage": verb}},
@@ -746,9 +746,9 @@ def test_trainer_model_hook_system_predict(tmp_path):
     expected = [
         {"name": "configure_callbacks"},
         {"name": "prepare_data"},
+        {"name": "configure_model"},
         {"name": "Callback.setup", "args": (trainer, model), "kwargs": {"stage": "predict"}},
         {"name": "setup", "kwargs": {"stage": "predict"}},
-        {"name": "configure_model"},
         {"name": "zero_grad"},
         {"name": "predict_dataloader"},
         {"name": "train", "args": (False,)},

@@ -941,9 +941,9 @@ class Trainer:
         log.debug(f"{self.__class__.__name__}: preparing data")
         self._data_connector.prepare_data()
 
-        call._call_setup_hook(self)  # allow user to set up LightningModule in accelerator environment
         log.debug(f"{self.__class__.__name__}: configuring model")
         call._call_configure_model(self)
+        call._call_setup_hook(self)  # allow user to set up LightningModule in accelerator environment
 
         # check if we should delay restoring checkpoint till later
         if not self.strategy.restore_checkpoint_after_setup:
