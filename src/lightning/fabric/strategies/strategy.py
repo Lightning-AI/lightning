@@ -302,6 +302,21 @@ class Strategy(ABC):
         # for optimizers that are not sharded, we return the state dict on all ranks
         return optimizer.state_dict()
 
+    def _recursively_load_state(self, state: Dict[str, Any], checkpoint: Dict[str, Any], strict: bool = True) -> None:
+        _validate_keys_for_strict_loading(state.keys(), checkpoint.keys(), strict=strict)
+        for name, obj in state.copy().items():
+            if name not in checkpoint:
+                continue
+            if isinstance(obj, _Stateful):
+                if isinstance(obj, Module):
+                    self.load_module_state_dict(module=obj, state_dict=checkpoint.pop(name), strict=strict)
+                else:
+                    obj.load_state_dict(checkpoint.pop(name))
+            elif isinstance(obj, dict):
+                self._recursively_load_state(state=state[name], checkpoint=checkpoint.pop(name), strict=strict)
+            else:
+                state[name] = checkpoint.pop(name)
+
     def load_checkpoint(
         self,
         path: _PATH,
@@ -339,17 +354,7 @@ class Strategy(ABC):
             state.load_state_dict(checkpoint)
             return {}
 
-        _validate_keys_for_strict_loading(state.keys(), checkpoint.keys(), strict=strict)
-        for name, obj in state.copy().items():
-            if name not in checkpoint:
-                continue
-            if isinstance(obj, _Stateful):
-                if isinstance(obj, Module):
-                    self.load_module_state_dict(module=obj, state_dict=checkpoint.pop(name), strict=strict)
-                else:
-                    obj.load_state_dict(checkpoint.pop(name))
-            else:
-                state[name] = checkpoint.pop(name)
+        self._recursively_load_state(state, checkpoint, strict=strict)
         return checkpoint
 
     def teardown(self) -> None:
@@ -406,6 +411,8 @@ class Strategy(ABC):
                 converted = self.get_optimizer_state(optimizer=obj)
             elif isinstance(obj, _Stateful):
                 converted = obj.state_dict()
+            elif isinstance(obj, dict):
+                converted = self._convert_stateful_objects_in_state(obj, filter)
             else:
                 converted = obj
             _apply_filter(key, filter, converted, converted_state)

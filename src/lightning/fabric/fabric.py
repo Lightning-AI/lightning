@@ -79,6 +79,17 @@ def _do_nothing(*_: Any) -> None:
     pass
 
 
+def _recursively_update_state(old_state: Dict[str, Any], new_unwrapped_state: Dict[str, Any]) -> None:
+    for k in list(new_unwrapped_state.keys()):
+        obj, _ = _unwrap_compiled(old_state[k])
+        if isinstance(obj, (_FabricModule, _FabricOptimizer, _FabricDataLoader)):
+            pass
+        elif isinstance(obj, dict):
+            _recursively_update_state(old_state[k], new_unwrapped_state[k])
+        else:
+            old_state[k] = new_unwrapped_state[k]
+
+
 class Fabric:
     r"""Fabric accelerates your PyTorch training or inference code with minimal changes required.
 
@@ -769,11 +780,7 @@ class Fabric:
         if state is not None:
             # We need to unwrap objects (see above) but this creates a new dictionary. In-place updates
             # (for user metadata) wouldn't show up in the original dict, so we need to copy the data back.
-            for k in list(unwrapped_state.keys()):
-                obj, _ = _unwrap_compiled(state[k])
-                if isinstance(obj, (_FabricModule, _FabricOptimizer, _FabricDataLoader)):
-                    continue
-                state[k] = unwrapped_state[k]
+            _recursively_update_state(state, unwrapped_state)
         return remainder
 
     def load_raw(self, path: Union[str, Path], obj: Union[nn.Module, Optimizer], strict: bool = True) -> None:
