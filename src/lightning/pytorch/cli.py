@@ -683,6 +683,7 @@ class LightningCLI:
                 f"`{self.__class__.__name__}.configure_optimizers`."
             )
 
+        self.model.configure_model()
         optimizer = instantiate_class(self.model.parameters(), optimizer_init)
         lr_scheduler = instantiate_class(optimizer, lr_scheduler_init) if lr_scheduler_init else None
         fn = partial(self.configure_optimizers, optimizer=optimizer, lr_scheduler=lr_scheduler)
