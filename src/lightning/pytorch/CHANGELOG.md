@@ -184,6 +184,9 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 - Fixed exporting `__version__` in `__init__` ([#19221](https://github.com/Lightning-AI/lightning/pull/19221))
 
 
+- Fixed an issue preventing the user to `model.load_from_checkpoint()` a GPU-trained model on a CPU-only machine with a CPU-only PyTorch installation ([#19024](https://github.com/Lightning-AI/lightning/pull/19024))
+
+
 ## [2.1.3] - 2023-12-21
 
 ### Changed

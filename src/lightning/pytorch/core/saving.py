@@ -96,6 +96,8 @@ def _load_from_checkpoint(
 
         device = next((t for t in state_dict.values() if isinstance(t, torch.Tensor)), torch.tensor(0)).device
         assert isinstance(model, pl.LightningModule)
+        if device.type == "cpu" and model.device.type == "cpu":
+            return model
         return model.to(device)
 
     raise NotImplementedError(f"Unsupported {cls}")

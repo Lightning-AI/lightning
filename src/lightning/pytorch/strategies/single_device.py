@@ -76,7 +76,8 @@ class SingleDeviceStrategy(Strategy):
     @override
     def model_to_device(self) -> None:
         assert self.model is not None, "self.model must be set before self.model.to()"
-        self.model.to(self.root_device)
+        if self.model.device.type != self.root_device.type:
+            self.model.to(self.root_device)
 
     @property
     @override
