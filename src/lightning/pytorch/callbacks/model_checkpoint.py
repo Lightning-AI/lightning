@@ -27,21 +27,28 @@ import warnings
 from copy import deepcopy
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal, Optional, Union, cast
 from weakref import proxy
 
+import pytorch_lightning as pl
 import torch
 import yaml
+from lightning_fabric.utilities.cloud_io import (
+    _is_dir,
+    _is_local_file_protocol,
+    get_filesystem,
+)
+from lightning_fabric.utilities.types import _PATH
+from pytorch_lightning.callbacks import Checkpoint
+from pytorch_lightning.utilities.exceptions import MisconfigurationException
+from pytorch_lightning.utilities.rank_zero import (
+    WarningCache,
+    rank_zero_info,
+    rank_zero_warn,
+)
+from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch import Tensor
 from typing_extensions import override
-
-import lightning.pytorch as pl
-from lightning.fabric.utilities.cloud_io import _is_dir, _is_local_file_protocol, get_filesystem
-from lightning.fabric.utilities.types import _PATH
-from lightning.pytorch.callbacks import Checkpoint
-from lightning.pytorch.utilities.exceptions import MisconfigurationException
-from lightning.pytorch.utilities.rank_zero import WarningCache, rank_zero_info, rank_zero_warn
-from lightning.pytorch.utilities.types import STEP_OUTPUT
 
 log = logging.getLogger(__name__)
 warning_cache = WarningCache()
@@ -241,9 +248,10 @@ class ModelCheckpoint(Checkpoint):
         self._last_global_step_saved = 0  # no need to save when no steps were taken
         self._last_time_checked: Optional[float] = None
         self.current_score: Optional[Tensor] = None
-        self.best_k_models: dict[str, Tensor] = {}
+        self.best_k_models: dict[str, dict[str, Tensor | dict[str, Tensor]]] = {}
         self.kth_best_model_path = ""
         self.best_model_score: Optional[Tensor] = None
+        self.best_model_metrics: Optional[Dict[str, Tensor]] = None
         self.best_model_path = ""
         self.last_model_path = ""
         self._last_checkpoint_saved = ""
@@ -339,6 +347,7 @@ class ModelCheckpoint(Checkpoint):
         return {
             "monitor": self.monitor,
             "best_model_score": self.best_model_score,
+            "best_model_metrics": self.best_model_metrics,
             "best_model_path": self.best_model_path,
             "current_score": self.current_score,
             "dirpath": self.dirpath,
@@ -354,6 +363,7 @@ class ModelCheckpoint(Checkpoint):
 
         if self.dirpath == dirpath_from_ckpt:
             self.best_model_score = state_dict["best_model_score"]
+            self.best_model_metrics = state_dict["best_model_metrics"]
             self.kth_best_model_path = state_dict.get("kth_best_model_path", self.kth_best_model_path)
             self.kth_value = state_dict.get("kth_value", self.kth_value)
             self.best_k_models = state_dict.get("best_k_models", self.best_k_models)
@@ -523,7 +533,9 @@ class ModelCheckpoint(Checkpoint):
             return True
 
         monitor_op = {"min": torch.lt, "max": torch.gt}[self.mode]
-        should_update_best_and_save = monitor_op(current, self.best_k_models[self.kth_best_model_path])
+        should_update_best_and_save = monitor_op(
+            current, cast(Tensor, self.best_k_models[self.kth_best_model_path]["score"])
+        )
 
         # If using multiple devices, make sure all processes are unanimous on the decision.
         should_update_best_and_save = trainer.strategy.reduce_boolean_decision(bool(should_update_best_and_save))
@@ -735,17 +747,22 @@ class ModelCheckpoint(Checkpoint):
 
         # save the current score
         self.current_score = current
-        self.best_k_models[filepath] = current
+        self.best_k_models[filepath] = {
+            "score": current,
+            "metrics": monitor_candidates,
+        }
 
         if len(self.best_k_models) == k:
             # monitor dict has reached k elements
             _op = max if self.mode == "min" else min
             self.kth_best_model_path = _op(self.best_k_models, key=self.best_k_models.get)  # type: ignore[arg-type]
             self.kth_value = self.best_k_models[self.kth_best_model_path]
+            self.kth_model_metrics = self.best_k_models[self.kth_best_model_path]["metrics"]
 
         _op = min if self.mode == "min" else max
         self.best_model_path = _op(self.best_k_models, key=self.best_k_models.get)  # type: ignore[arg-type]
-        self.best_model_score = self.best_k_models[self.best_model_path]
+        self.best_model_score = self.best_k_models[self.best_model_path]["score"]
+        self.best_model_metrics = self.best_k_models[self.best_model_path]["metrics"]
 
         if self.verbose:
             epoch = monitor_candidates["epoch"]
@@ -762,7 +779,7 @@ class ModelCheckpoint(Checkpoint):
     def to_yaml(self, filepath: Optional[_PATH] = None) -> None:
         """Saves the `best_k_models` dict containing the checkpoint paths with the corresponding scores to a YAML
         file."""
-        best_k = {k: v.item() for k, v in self.best_k_models.items()}
+        best_k = {k: v["score"].item() for k, v in self.best_k_models.items()}  # type: ignore[arg-type]
         if filepath is None:
             assert self.dirpath
             filepath = os.path.join(self.dirpath, "best_k_models.yaml")
