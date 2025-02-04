@@ -268,6 +268,7 @@ class NeptuneLogger(Logger):
                 root_obj = root_obj.get_root_object()
 
             root_obj[_INTEGRATION_VERSION_KEY] = pl.__version__
+        self._uploaded_models: Set[str] = set()
 
     def _retrieve_run_data(self) -> None:
         from neptune.handler import Handler
@@ -524,8 +525,10 @@ class NeptuneLogger(Logger):
         if hasattr(checkpoint_callback, "best_k_models"):
             for key in checkpoint_callback.best_k_models:
                 model_name = self._get_full_model_name(key, checkpoint_callback)
-                file_names.add(model_name)
-                self.run[f"{checkpoints_namespace}/{model_name}"].upload(key)
+                if model_name not in self._uploaded_models:
+                    file_names.add(model_name)
+                    self._uploaded_models.add(model_name)
+                    self.run[f"{checkpoints_namespace}/{model_name}"].upload(key)
 
         # log best model path and checkpoint
         if hasattr(checkpoint_callback, "best_model_path") and checkpoint_callback.best_model_path:
@@ -543,6 +546,7 @@ class NeptuneLogger(Logger):
 
             for file_to_drop in list(uploaded_model_names - file_names):
                 del self.run[f"{checkpoints_namespace}/{file_to_drop}"]
+                self._uploaded_models.remove(file_to_drop)
 
         # log best model score
         if hasattr(checkpoint_callback, "best_model_score") and checkpoint_callback.best_model_score:
