@@ -1520,6 +1520,9 @@ class Trainer:
     @property
     def num_training_batches(self) -> Union[int, float]:
         """The number of training batches that will be used during ``trainer.fit()``."""
+        if self.train_dataloader is None:
+            rank_zero_info("Loading `train_dataloader` to estimate number of training batches.")
+            self.fit_loop.setup_data()
         return self.fit_loop.max_batches
 
     @property
