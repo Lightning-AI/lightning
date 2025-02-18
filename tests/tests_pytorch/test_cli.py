@@ -1647,8 +1647,13 @@ def _test_logger_init_args(logger_name, init, unresolved=None):
 def test_comet_logger_init_args():
     _test_logger_init_args(
         "CometLogger",
-        init={"save_dir": "comet"},  # Resolve from CometLogger.__init__
-        unresolved={"workspace": "comet"},  # Resolve from Comet{,Existing,Offline}Experiment.__init__
+        init={
+            "experiment_key": "some_key",  # Resolve from CometLogger.__init__
+            "workspace": "comet",
+        },
+        unresolved={
+            "save_dir": "comet",  # Resolve from CometLogger.__init__ as kwarg
+        },
     )
 
 

@@ -94,17 +94,19 @@ def comet_mock(monkeypatch):
     comet = ModuleType("comet_ml")
     monkeypatch.setitem(sys.modules, "comet_ml", comet)
 
-    comet.Experiment = Mock()
-    comet.ExistingExperiment = Mock()
-    comet.OfflineExperiment = Mock()
-    comet.API = Mock()
+    # to support dunder methods calling we will create a special mock
+    comet_experiment = MagicMock(name="CommonExperiment")
+    setattr(comet_experiment, "__internal_api__set_model_graph__", MagicMock())
+    setattr(comet_experiment, "__internal_api__log_metrics__", MagicMock())
+    setattr(comet_experiment, "__internal_api__log_parameters__", MagicMock())
+
+    comet.Experiment = MagicMock(name="Experiment", return_value=comet_experiment)
+    comet.ExistingExperiment = MagicMock(name="ExistingExperiment", return_value=comet_experiment)
+    comet.OfflineExperiment = MagicMock(name="OfflineExperiment", return_value=comet_experiment)
+
+    comet.ExperimentConfig = Mock()
+    comet.start = Mock(name="comet_ml.start", return_value=comet.Experiment())
     comet.config = Mock()
-
-    comet_api = ModuleType("api")
-    comet_api.API = Mock()
-    monkeypatch.setitem(sys.modules, "comet_ml.api", comet_api)
-
-    comet.api = comet_api
 
     monkeypatch.setattr("lightning.pytorch.loggers.comet._COMET_AVAILABLE", True)
     return comet

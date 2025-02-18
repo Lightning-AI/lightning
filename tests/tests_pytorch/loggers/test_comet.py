@@ -13,7 +13,7 @@
 # limitations under the License.
 import os
 from unittest import mock
-from unittest.mock import DEFAULT, Mock, patch
+from unittest.mock import Mock, call
 
 import pytest
 from torch import tensor
@@ -22,6 +22,8 @@ from lightning.pytorch import Trainer
 from lightning.pytorch.demos.boring_classes import BoringModel
 from lightning.pytorch.loggers import CometLogger
 from lightning.pytorch.utilities.exceptions import MisconfigurationException
+
+FRAMEWORK_NAME = "pytorch-lightning"
 
 
 def _patch_comet_atexit(monkeypatch):
@@ -34,186 +36,108 @@ def _patch_comet_atexit(monkeypatch):
 @mock.patch.dict(os.environ, {})
 def test_comet_logger_online(comet_mock):
     """Test comet online with mocks."""
-    # Test api_key given
-    comet_experiment = comet_mock.Experiment
-    logger = CometLogger(api_key="key", workspace="dummy-test", project_name="general")
-    _ = logger.experiment
-    comet_experiment.assert_called_once_with(api_key="key", workspace="dummy-test", project_name="general")
 
-    # Test both given
-    comet_experiment.reset_mock()
-    logger = CometLogger(save_dir="test", api_key="key", workspace="dummy-test", project_name="general")
-    _ = logger.experiment
-    comet_experiment.assert_called_once_with(api_key="key", workspace="dummy-test", project_name="general")
+    comet_start = comet_mock.start
 
-    # Test already exists
-    comet_existing = comet_mock.ExistingExperiment
-    logger = CometLogger(
-        experiment_key="test",
-        experiment_name="experiment",
+    # Test api_key given with old param "project_name"
+    _logger = CometLogger(api_key="key", workspace="dummy-test", project_name="general")
+    comet_start.assert_called_once_with(
         api_key="key",
         workspace="dummy-test",
-        project_name="general",
+        project="general",
+        experiment_key=None,
+        mode=None,
+        online=None,
+        experiment_config=comet_mock.ExperimentConfig(),
     )
-    _ = logger.experiment
-    comet_existing.assert_called_once_with(
-        api_key="key", workspace="dummy-test", project_name="general", previous_experiment="test"
-    )
-    comet_existing().set_name.assert_called_once_with("experiment")
 
-    # API experiment
-    api = comet_mock.api.API
-    CometLogger(api_key="key", workspace="dummy-test", project_name="general", rest_api_key="rest")
-    api.assert_called_once_with("rest")
+    # Test online given
+    comet_start.reset_mock()
+    _logger = CometLogger(save_dir="test", api_key="key", workspace="dummy-test", project_name="general", online=True)
+    comet_start.assert_called_once_with(
+        api_key="key",
+        workspace="dummy-test",
+        project="general",
+        experiment_key=None,
+        mode=None,
+        online=True,
+        experiment_config=comet_mock.ExperimentConfig(),
+    )
+
+    # Test experiment_key given
+    comet_start.reset_mock()
+    _logger = CometLogger(
+        experiment_key="test_key",
+        api_key="key",
+        project="general",
+    )
+    comet_start.assert_called_once_with(
+        api_key="key",
+        workspace=None,
+        project="general",
+        experiment_key="test_key",
+        mode=None,
+        online=None,
+        experiment_config=comet_mock.ExperimentConfig(),
+    )
 
 
 @mock.patch.dict(os.environ, {})
-def test_comet_experiment_resets_if_not_alive(comet_mock):
-    """Test that the CometLogger creates a new experiment if the old one is not alive anymore."""
+def test_comet_experiment_is_still_alive_after_training_complete(comet_mock):
+    """Test that the CometLogger will not end an experiment after training is complete."""
+
     logger = CometLogger()
-    assert logger._experiment is None
-    alive_experiment = Mock(alive=True)
-    logger._experiment = alive_experiment
-    assert logger.experiment is alive_experiment
+    assert logger.experiment is not None
 
-    unalive_experiment = Mock(alive=False)
-    logger._experiment = unalive_experiment
-    assert logger.experiment is not unalive_experiment
+    logger._experiment = Mock()
+    logger.finalize("ended")
 
+    # Assert that data was saved to comet.com
+    logger._experiment.flush.assert_called_once()
 
-@mock.patch.dict(os.environ, {})
-def test_comet_logger_no_api_key_given(comet_mock):
-    """Test that CometLogger fails to initialize if both api key and save_dir are missing."""
-    with pytest.raises(MisconfigurationException, match="requires either api_key or save_dir"):
-        comet_mock.config.get_api_key.return_value = None
-        CometLogger(workspace="dummy-test", project_name="general")
+    # Assert that was not ended
+    logger._experiment.end.assert_not_called()
 
 
 @mock.patch.dict(os.environ, {})
 def test_comet_logger_experiment_name(comet_mock):
     """Test that Comet Logger experiment name works correctly."""
-    api_key = "key"
-    experiment_name = "My Name"
+    api_key = "api_key"
+    experiment_name = "My Experiment Name"
 
-    # Test api_key given
-    comet_experiment = comet_mock.Experiment
+    comet_start = comet_mock.start
+
+    # here we use old style arg "experiment_name" (new one is "name")
     logger = CometLogger(api_key=api_key, experiment_name=experiment_name)
-    assert logger._experiment is None
-
-    _ = logger.experiment
-    comet_experiment.assert_called_once_with(api_key=api_key, project_name=None)
-    comet_experiment().set_name.assert_called_once_with(experiment_name)
-
-
-@mock.patch.dict(os.environ, {})
-def test_comet_logger_manual_experiment_key(comet_mock):
-    """Test that Comet Logger respects manually set COMET_EXPERIMENT_KEY."""
-    api_key = "key"
-    experiment_key = "96346da91469407a85641afe5766b554"
-
-    instantiation_environ = {}
-
-    def save_os_environ(*args, **kwargs):
-        nonlocal instantiation_environ
-        instantiation_environ = os.environ.copy()
-
-        return DEFAULT
-
-    comet_experiment = comet_mock.Experiment
-    comet_experiment.side_effect = save_os_environ
-
-    # Test api_key given
-    with patch.dict(os.environ, {"COMET_EXPERIMENT_KEY": experiment_key}):
-        logger = CometLogger(api_key=api_key)
-        assert logger.version == experiment_key
-        assert logger._experiment is None
-
-        _ = logger.experiment
-        comet_experiment.assert_called_once_with(api_key=api_key, project_name=None)
-
-    assert instantiation_environ["COMET_EXPERIMENT_KEY"] == experiment_key
-
-
-@mock.patch.dict(os.environ, {})
-def test_comet_logger_dirs_creation(comet_mock, tmp_path, monkeypatch):
-    """Test that the logger creates the folders and files in the right place."""
-    _patch_comet_atexit(monkeypatch)
-    comet_experiment = comet_mock.OfflineExperiment
-
-    comet_mock.config.get_api_key.return_value = None
-    comet_mock.generate_guid = Mock()
-    comet_mock.generate_guid.return_value = "4321"
-
-    logger = CometLogger(project_name="test", save_dir=str(tmp_path))
-    assert not os.listdir(tmp_path)
-    assert logger.mode == "offline"
-    assert logger.save_dir == str(tmp_path)
-    assert logger.name == "test"
-    assert logger.version == "4321"
-
-    _ = logger.experiment
-    comet_experiment.assert_called_once_with(offline_directory=str(tmp_path), project_name="test")
-
-    # mock return values of experiment
-    logger.experiment.id = "1"
-    logger.experiment.project_name = "test"
-
-    model = BoringModel()
-    trainer = Trainer(
-        default_root_dir=tmp_path, logger=logger, max_epochs=1, limit_train_batches=3, limit_val_batches=3
+    comet_start.assert_called_once_with(
+        api_key=api_key,
+        workspace=None,
+        project=None,
+        experiment_key=None,
+        mode=None,
+        online=None,
+        experiment_config=comet_mock.ExperimentConfig(),
     )
-    assert trainer.log_dir == logger.save_dir
-    trainer.fit(model)
+    # check that we saved "experiment name" in kwargs as new "name" arg
+    assert logger._kwargs["name"] == experiment_name
+    assert "experiment_name" not in logger._kwargs
 
-    assert trainer.checkpoint_callback.dirpath == str(tmp_path / "test" / "1" / "checkpoints")
-    assert set(os.listdir(trainer.checkpoint_callback.dirpath)) == {"epoch=0-step=3.ckpt"}
-    assert trainer.log_dir == logger.save_dir
-
-
-@mock.patch.dict(os.environ, {})
-def test_comet_name_default(comet_mock):
-    """Test that CometLogger.name don't create an Experiment and returns a default value."""
-    api_key = "key"
-    logger = CometLogger(api_key=api_key)
-    assert logger._experiment is None
-    assert logger.name == "comet-default"
-    assert logger._experiment is None
+    # check that "experiment name" was passed to experiment config correctly
+    assert call(experiment_name=experiment_name) not in comet_mock.ExperimentConfig.call_args_list
+    assert call(name=experiment_name) in comet_mock.ExperimentConfig.call_args_list
 
 
 @mock.patch.dict(os.environ, {})
-def test_comet_name_project_name(comet_mock):
-    """Test that CometLogger.name does not create an Experiment and returns project name if passed."""
-    api_key = "key"
-    project_name = "My Project Name"
-    logger = CometLogger(api_key=api_key, project_name=project_name)
-    assert logger._experiment is None
-    assert logger.name == project_name
-    assert logger._experiment is None
-
-
-@mock.patch.dict(os.environ, {})
-def test_comet_version_without_experiment(comet_mock):
-    """Test that CometLogger.version does not create an Experiment."""
+def test_comet_version(comet_mock):
+    """Test that CometLogger.version returns an Experiment key."""
     api_key = "key"
     experiment_name = "My Name"
-    comet_mock.generate_guid = Mock()
-    comet_mock.generate_guid.return_value = "1234"
 
-    logger = CometLogger(api_key=api_key, experiment_name=experiment_name)
-    assert logger._experiment is None
+    logger = CometLogger(api_key=api_key, name=experiment_name)
+    assert logger._experiment is not None
+    _ = logger.version
 
-    first_version = logger.version
-    assert first_version is not None
-    assert logger.version == first_version
-    assert logger._experiment is None
-
-    _ = logger.experiment
-
-    logger.reset_experiment()
-
-    second_version = logger.version == "1234"
-    assert second_version is not None
-    assert second_version != first_version
+    logger._experiment.get_key.assert_called()
 
 
 @mock.patch.dict(os.environ, {})
@@ -222,7 +146,53 @@ def test_comet_epoch_logging(comet_mock, tmp_path, monkeypatch):
     _patch_comet_atexit(monkeypatch)
     logger = CometLogger(project_name="test", save_dir=str(tmp_path))
     logger.log_metrics({"test": 1, "epoch": 1}, step=123)
-    logger.experiment.log_metrics.assert_called_once_with({"test": 1}, epoch=1, step=123)
+    logger.experiment.__internal_api__log_metrics__.assert_called_once_with(
+        {"test": 1},
+        epoch=1,
+        step=123,
+        prefix=logger._prefix,
+        framework="pytorch-lightning",
+    )
+
+
+@mock.patch.dict(os.environ, {})
+def test_comet_log_hyperparams(comet_mock, tmp_path, monkeypatch):
+    """Test that CometLogger.log_hyperparams calls internal API method."""
+    _patch_comet_atexit(monkeypatch)
+
+    logger = CometLogger(project_name="test")
+    hyperparams = {
+        "batch_size": 256,
+        "config": {
+            "SLURM Job ID": "22334455",
+            "RGB slurm jobID": "12345678",
+            "autoencoder_model": False,
+        },
+    }
+    logger.log_hyperparams(hyperparams)
+
+    logger.experiment.__internal_api__log_parameters__.assert_called_once_with(
+        parameters=hyperparams,
+        framework=FRAMEWORK_NAME,
+        flatten_nested=True,
+        source="manual",
+    )
+
+
+@mock.patch.dict(os.environ, {})
+def test_comet_log_graph(comet_mock, tmp_path, monkeypatch):
+    """Test that CometLogger.log_hyperparams calls internal API method."""
+    _patch_comet_atexit(monkeypatch)
+
+    logger = CometLogger(project_name="test")
+    model = Mock()
+
+    logger.log_graph(model=model)
+
+    logger.experiment.__internal_api__set_model_graph__.assert_called_once_with(
+        graph=model,
+        framework="pytorch-lightning",
+    )
 
 
 @mock.patch.dict(os.environ, {})
