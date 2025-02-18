@@ -443,7 +443,7 @@ class _TrainingEpochLoop(loops._Loop):
             if update_plateau_schedulers ^ config.reduce_on_plateau:
                 continue
 
-            current_idx = self.batch_idx if interval == "step" else trainer.current_epoch
+            current_idx = self.total_batch_idx if interval == "step" else trainer.current_epoch
             current_idx += 1  # account for both batch and epoch starts from 0
             # Take step if call to update_learning_rates matches the interval key and
             # the current step modulo the schedulers frequency is zero
