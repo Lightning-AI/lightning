@@ -427,3 +427,33 @@ def test_set_tracking_uri(mlflow_mock):
     mlflow_mock.set_tracking_uri.assert_not_called()
     _ = logger.experiment
     mlflow_mock.set_tracking_uri.assert_called_with("the_tracking_uri")
+
+
+@mock.patch("lightning.pytorch.loggers.mlflow._get_resolve_tags", Mock())
+def test_mlflow_log_model_with_checkpoint_path_prefix(mlflow_mock, tmp_path):
+    """Test that the logger creates the folders and files in the right place with a prefix."""
+    client = mlflow_mock.tracking.MlflowClient
+
+    # Get model, logger, trainer and train
+    model = BoringModel()
+    logger = MLFlowLogger("test", save_dir=str(tmp_path), log_model="all", checkpoint_path_prefix="my_prefix")
+    logger = mock_mlflow_run_creation(logger, experiment_id="test-id")
+
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        logger=logger,
+        max_epochs=2,
+        limit_train_batches=3,
+        limit_val_batches=3,
+    )
+    trainer.fit(model)
+
+    # Checkpoint log
+    assert client.return_value.log_artifact.call_count == 2
+    # Metadata and aliases log
+    assert client.return_value.log_artifacts.call_count == 2
+
+    # Check that the prefix is used in the artifact path
+    for call in client.return_value.log_artifact.call_args_list:
+        args, _ = call
+        assert str(args[2]).startswith("my_prefix")

@@ -97,7 +97,7 @@ class MLFlowLogger(Logger):
               :paramref:`~lightning.pytorch.callbacks.Checkpoint.save_top_k` ``== -1``
               which also logs every checkpoint during training.
             * if ``log_model == False`` (default), no checkpoint is logged.
-
+        checkpoint_path_prefix: A string to prefix the checkpoint artifact's path.
         prefix: A string to put at the beginning of metric keys.
         artifact_location: The location to store run artifacts. If not provided, the server picks an appropriate
             default.
@@ -121,6 +121,7 @@ class MLFlowLogger(Logger):
         tags: Optional[dict[str, Any]] = None,
         save_dir: Optional[str] = "./mlruns",
         log_model: Literal[True, False, "all"] = False,
+        checkpoint_path_prefix: str = "",
         prefix: str = "",
         artifact_location: Optional[str] = None,
         run_id: Optional[str] = None,
@@ -147,6 +148,7 @@ class MLFlowLogger(Logger):
         self._artifact_location = artifact_location
         self._log_batch_kwargs = {} if synchronous is None else {"synchronous": synchronous}
         self._initialized = False
+        self._checkpoint_path_prefix = checkpoint_path_prefix
 
         from mlflow.tracking import MlflowClient
 
@@ -361,7 +363,7 @@ class MLFlowLogger(Logger):
             aliases = ["latest", "best"] if p == checkpoint_callback.best_model_path else ["latest"]
 
             # Artifact path on mlflow
-            artifact_path = Path(p).stem
+            artifact_path = Path(self._checkpoint_path_prefix) / Path(p).stem
 
             # Log the checkpoint
             self.experiment.log_artifact(self._run_id, p, artifact_path)
