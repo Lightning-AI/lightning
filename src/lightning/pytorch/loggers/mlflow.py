@@ -142,7 +142,7 @@ class MLFlowLogger(Logger):
         self.tags = tags
         self._log_model = log_model
         self._logged_model_time: dict[str, float] = {}
-        self._checkpoint_callback: Optional[ModelCheckpoint] = None
+        self._checkpoint_callbacks: Optional[list[ModelCheckpoint]] = []
         self._prefix = prefix
         self._artifact_location = artifact_location
         self._log_batch_kwargs = {} if synchronous is None else {"synchronous": synchronous}
@@ -283,8 +283,9 @@ class MLFlowLogger(Logger):
             status = "FINISHED"
 
         # log checkpoints as artifacts
-        if self._checkpoint_callback:
-            self._scan_and_log_checkpoints(self._checkpoint_callback)
+        if self._checkpoint_callbacks:
+            for callback in self._checkpoint_callbacks:
+                self._scan_and_log_checkpoints(callback)
 
         if self.experiment.get_run(self.run_id):
             self.experiment.set_terminated(self.run_id, status)
@@ -330,8 +331,12 @@ class MLFlowLogger(Logger):
         # log checkpoints as artifacts
         if self._log_model == "all" or self._log_model is True and checkpoint_callback.save_top_k == -1:
             self._scan_and_log_checkpoints(checkpoint_callback)
-        elif self._log_model is True:
-            self._checkpoint_callback = checkpoint_callback
+        elif (
+            self._log_model is True
+            and self._checkpoint_callbacks
+            and checkpoint_callback not in self._checkpoint_callbacks
+        ):
+            self._checkpoint_callbacks.append(checkpoint_callback)
 
     def _scan_and_log_checkpoints(self, checkpoint_callback: ModelCheckpoint) -> None:
         # get checkpoints to be saved with associated score

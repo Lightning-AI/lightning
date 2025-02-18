@@ -12,18 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock, Mock
 
 import pytest
 
 from lightning.pytorch import Trainer
+from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.demos.boring_classes import BoringModel
 from lightning.pytorch.loggers.mlflow import (
     _MLFLOW_AVAILABLE,
     MLFlowLogger,
     _get_resolve_tags,
 )
+from lightning.pytorch.utilities.types import STEP_OUTPUT
 
 
 def mock_mlflow_run_creation(logger, experiment_name=None, experiment_id=None, run_id=None):
@@ -427,3 +430,79 @@ def test_set_tracking_uri(mlflow_mock):
     mlflow_mock.set_tracking_uri.assert_not_called()
     _ = logger.experiment
     mlflow_mock.set_tracking_uri.assert_called_with("the_tracking_uri")
+
+
+@mock.patch("lightning.pytorch.loggers.mlflow._get_resolve_tags", Mock())
+def test_mlflow_multiple_checkpoints_top_k(mlflow_mock, tmp_path):
+    """Test that multiple ModelCheckpoint callbacks with top_k parameters work correctly with MLFlowLogger.
+
+    This test verifies that when using multiple ModelCheckpoint callbacks with save_top_k, both callbacks function
+    correctly and save the expected number of checkpoints when using MLFlowLogger with log_model=True.
+
+    """
+
+    class CustomBoringModel(BoringModel):
+        def training_step(self, batch: Any, batch_idx: int) -> STEP_OUTPUT:
+            loss = self.step(batch)
+            self.log("train_loss", loss)
+            return {"loss": loss}
+
+        def validation_step(self, batch: Any, batch_idx: int) -> STEP_OUTPUT:
+            loss = self.step(batch)
+            self.log("val_loss", loss)
+            return {"loss": loss}
+
+    client = mlflow_mock.tracking.MlflowClient
+
+    model = CustomBoringModel()
+    logger = MLFlowLogger("test", save_dir=str(tmp_path), log_model=True)
+    logger = mock_mlflow_run_creation(logger, experiment_id="test-id")
+
+    # Create two ModelCheckpoint callbacks monitoring different metrics
+    train_ckpt = ModelCheckpoint(
+        dirpath=str(tmp_path / "train_checkpoints"),
+        monitor="train_loss",
+        filename="best_train_model-{epoch:02d}-{train_loss:.2f}",
+        save_top_k=2,
+        mode="min",
+    )
+    val_ckpt = ModelCheckpoint(
+        dirpath=str(tmp_path / "val_checkpoints"),
+        monitor="val_loss",
+        filename="best_val_model-{epoch:02d}-{val_loss:.2f}",
+        save_top_k=2,
+        mode="min",
+    )
+
+    # Create trainer with both callbacks
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        logger=logger,
+        callbacks=[train_ckpt, val_ckpt],
+        max_epochs=5,
+        limit_train_batches=3,
+        limit_val_batches=3,
+    )
+    trainer.fit(model)
+
+    # Verify both callbacks saved their checkpoints
+    assert len(train_ckpt.best_k_models) > 0, "Train checkpoint callback did not save any models"
+    assert len(val_ckpt.best_k_models) > 0, "Validation checkpoint callback did not save any models"
+
+    # Get all artifact paths that were logged
+    logged_artifacts = [call_args[0][1] for call_args in client.return_value.log_artifact.call_args_list]
+
+    # Verify MLFlow logged artifacts from both callbacks
+    # Get all artifact paths that were logged
+    logged_artifacts = [call_args[0][1] for call_args in client.return_value.log_artifact.call_args_list]
+
+    # Verify MLFlow logged artifacts from both callbacks
+    train_artifacts = [path for path in logged_artifacts if "train_checkpoints" in path]
+    val_artifacts = [path for path in logged_artifacts if "val_checkpoints" in path]
+
+    assert len(train_artifacts) > 0, "MLFlow did not log any train checkpoint artifacts"
+    assert len(val_artifacts) > 0, "MLFlow did not log any validation checkpoint artifacts"
+
+    # Verify the number of logged artifacts matches the save_top_k for each callback
+    assert len(train_artifacts) == train_ckpt.save_top_k, "Number of logged train artifacts doesn't match save_top_k"
+    assert len(val_artifacts) == val_ckpt.save_top_k, "Number of logged val artifacts doesn't match save_top_k"
