@@ -46,6 +46,10 @@ def test_accelerator_registry_with_new_accelerator():
             return ["foo"] * devices
 
         @staticmethod
+        def get_device_type():
+            return "foo"
+
+        @staticmethod
         def auto_device_count():
             return 3
 

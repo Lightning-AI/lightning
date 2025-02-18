@@ -80,6 +80,11 @@ class CPUAccelerator(Accelerator):
             description=cls.__name__,
         )
 
+    @staticmethod
+    @override
+    def get_device_type() -> str:
+        return "cpu"
+
 
 # CPU device metrics
 _CPU_VM_PERCENT = "cpu_vm_percent"

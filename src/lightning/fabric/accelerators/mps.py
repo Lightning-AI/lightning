@@ -62,6 +62,11 @@ class MPSAccelerator(Accelerator):
 
     @staticmethod
     @override
+    def get_device_type() -> str:
+        return "mps"
+
+    @staticmethod
+    @override
     def auto_device_count() -> int:
         """Get the devices when set to auto."""
         return 1

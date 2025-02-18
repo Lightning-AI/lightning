@@ -57,6 +57,11 @@ class CUDAAccelerator(Accelerator):
 
     @staticmethod
     @override
+    def get_device_type() -> str:
+        return "cuda"
+
+    @staticmethod
+    @override
     def auto_device_count() -> int:
         """Get the devices when set to auto."""
         return num_cuda_devices()

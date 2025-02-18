@@ -66,6 +66,11 @@ class XLAAccelerator(Accelerator):
 
     @staticmethod
     @override
+    def get_device_type() -> str:
+        return "xla"
+
+    @staticmethod
+    @override
     # XLA's multiprocessing will pop the TPU_NUM_DEVICES key, so we need to cache it
     # https://github.com/pytorch/xla/blob/v2.0.0/torch_xla/distributed/xla_multiprocessing.py#L280
     @functools.lru_cache(maxsize=1)

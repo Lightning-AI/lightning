@@ -45,3 +45,8 @@ class Accelerator(_Accelerator, ABC):
 
         """
         raise NotImplementedError
+
+    @staticmethod
+    def get_device_type() -> str:
+        """Get the device for the current process."""
+        raise NotImplementedError

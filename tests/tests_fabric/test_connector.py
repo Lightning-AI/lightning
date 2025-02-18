@@ -180,6 +180,10 @@ def test_custom_accelerator(*_):
             return [torch.device("cpu")] * devices
 
         @staticmethod
+        def get_device_type() -> str:
+            return "cpu"
+
+        @staticmethod
         def auto_device_count() -> int:
             return 1
 

@@ -142,6 +142,8 @@ class _Connector:
             self._accelerator_flag = self._choose_auto_accelerator()
         elif self._accelerator_flag == "gpu":
             self._accelerator_flag = self._choose_gpu_accelerator_backend()
+        elif isinstance(self._accelerator_flag, Accelerator):
+            pass  # for 3rd party accelerator, just do nothing
 
         self._set_parallel_devices_and_init_accelerator()
 
@@ -461,7 +463,12 @@ class _Connector:
         if isinstance(self.strategy, DeepSpeedStrategy):
             return DeepSpeedPrecision(self._precision_input)  # type: ignore
         if isinstance(self.strategy, FSDPStrategy):
-            return FSDPPrecision(precision=self._precision_input)  # type: ignore[arg-type]
+            return FSDPPrecision(
+                precision=self._precision_input,  # type: ignore[arg-type]
+                device_type=self._accelerator_flag.get_device_type()
+                if isinstance(self._accelerator_flag, Accelerator)
+                else None,
+            )
         mp_precision_supported = ("32-true", "bf16-mixed", "bf16-true", "16-true")
         if isinstance(self.strategy, ModelParallelStrategy) and self._precision_input not in mp_precision_supported:
             raise ValueError(
@@ -493,6 +500,8 @@ class _Connector:
                 else "Using bfloat16 Automatic Mixed Precision (AMP)"
             )
             device = "cpu" if self._accelerator_flag == "cpu" else "cuda"
+            if isinstance(self._accelerator_flag, Accelerator):
+                device = self._accelerator_flag.get_device_type()
             return MixedPrecision(precision=self._precision_input, device=device)  # type: ignore[arg-type]
 
         raise RuntimeError("No precision set")

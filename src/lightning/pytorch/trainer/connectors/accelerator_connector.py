@@ -142,6 +142,8 @@ class _AcceleratorConnector:
             self._accelerator_flag = self._choose_auto_accelerator()
         elif self._accelerator_flag == "gpu":
             self._accelerator_flag = self._choose_gpu_accelerator_backend()
+        elif isinstance(self._accelerator_flag, Accelerator):
+            pass  # for 3rd party accelerator, just do nothing
 
         self._check_device_config_and_set_final_flags(devices=devices, num_nodes=num_nodes)
         self._set_parallel_devices_and_init_accelerator()
@@ -302,13 +304,15 @@ class _AcceleratorConnector:
                             f" but accelerator set to {self._accelerator_flag}, please choose one device type"
                         )
                     self._accelerator_flag = "cpu"
-                if self._strategy_flag.parallel_devices[0].type == "cuda":
+                elif self._strategy_flag.parallel_devices[0].type == "cuda":
                     if self._accelerator_flag and self._accelerator_flag not in ("auto", "cuda", "gpu"):
                         raise MisconfigurationException(
                             f"GPU parallel_devices set through {self._strategy_flag.__class__.__name__} class,"
                             f" but accelerator set to {self._accelerator_flag}, please choose one device type"
                         )
                     self._accelerator_flag = "cuda"
+                else:
+                    pass  # 3rd party accelerator
                 self._parallel_devices = self._strategy_flag.parallel_devices
 
     def _check_device_config_and_set_final_flags(self, devices: Union[list[int], str, int], num_nodes: int) -> None:
@@ -458,11 +462,18 @@ class _AcceleratorConnector:
         strategy_flag = "" if isinstance(self._strategy_flag, Strategy) else self._strategy_flag
 
         if (
-            strategy_flag in FSDPStrategy.get_registered_strategies() or type(self._strategy_flag) is FSDPStrategy
-        ) and self._accelerator_flag not in ("cuda", "gpu"):
+            (strategy_flag in FSDPStrategy.get_registered_strategies() or type(self._strategy_flag) is FSDPStrategy)
+            and self._accelerator_flag not in ("cuda", "gpu")
+            and isinstance(self._accelerator_flag, str)
+        ):
             raise ValueError(
                 f"The strategy `{FSDPStrategy.strategy_name}` requires a GPU accelerator, but got:"
                 f" {self._accelerator_flag}"
+            )
+        if isinstance(self._accelerator_flag, Accelerator):
+            Warning(
+                f"Using a custom accelerator `{self._accelerator_flag.__class__.__name__}`."
+                f" Please ensure it is compatible with the selected strategy `{strategy_flag}`."
             )
         if strategy_flag in _DDP_FORK_ALIASES and "fork" not in torch.multiprocessing.get_all_start_methods():
             raise ValueError(
@@ -497,7 +508,12 @@ class _AcceleratorConnector:
         if isinstance(self.strategy, DeepSpeedStrategy):
             return DeepSpeedPrecision(self._precision_flag)  # type: ignore[arg-type]
         if isinstance(self.strategy, FSDPStrategy):
-            return FSDPPrecision(self._precision_flag)  # type: ignore[arg-type]
+            return FSDPPrecision(
+                precision=self._precision_flag,  # type: ignore[arg-type]
+                device_type=self._accelerator_flag.get_device_type()
+                if isinstance(self._accelerator_flag, Accelerator)
+                else None,
+            )
         if self._precision_flag in ("16-true", "bf16-true"):
             return HalfPrecision(self._precision_flag)  # type: ignore
         if self._precision_flag == "32-true":
@@ -521,6 +537,8 @@ class _AcceleratorConnector:
                 f"Using {'16bit' if self._precision_flag == '16-mixed' else 'bfloat16'} Automatic Mixed Precision (AMP)"
             )
             device = "cpu" if self._accelerator_flag == "cpu" else "cuda"
+            if isinstance(self._accelerator_flag, Accelerator):
+                device = self._accelerator_flag.get_device_type()
             return MixedPrecision(self._precision_flag, device)  # type: ignore[arg-type]
 
         raise RuntimeError("No precision set")

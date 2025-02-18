@@ -319,12 +319,22 @@ class DeepSpeedStrategy(DDPStrategy):
         self.hysteresis = hysteresis
         self.min_loss_scale = min_loss_scale
 
+        try:
+            self.device_type = self.accelerator.get_device_type()  # type: ignore[union-attr]
+        except Exception:
+            self.device_type = "cuda"
+        self.torch_lib = getattr(torch, self.device_type)
+
     @override
     def setup_environment(self) -> None:
-        if not isinstance(self.accelerator, CUDAAccelerator):
+        from deepspeed.runtime.utils import get_accelerator
+
+        if (
+            not isinstance(self.accelerator, CUDAAccelerator)
+        ) and self.accelerator.get_device_type() != get_accelerator().device_name():  # type: ignore[union-attr]
             raise RuntimeError(
-                f"The DeepSpeed strategy is only supported on CUDA GPUs but `{self.accelerator.__class__.__name__}`"
-                " is used."
+                f"The DeepSpeed strategy is only supported on {get_accelerator().device_name().upper()} GPUs, "
+                f"but `{self.accelerator.__class__.__name__}` is used."
             )
         super().setup_environment()
 
@@ -666,6 +676,9 @@ class DeepSpeedStrategy(DDPStrategy):
         from lightning.pytorch.trainer.states import TrainerFn
 
         is_fitting = self.lightning_module.trainer.state.fn == TrainerFn.FITTING
+
+        if hasattr(torch, self.device_type) and callable(self.torch_lib.empty_cache):
+            self.torch_lib.empty_cache()
 
         _, client_state = self.deepspeed_engine.load_checkpoint(
             checkpoint_path,
