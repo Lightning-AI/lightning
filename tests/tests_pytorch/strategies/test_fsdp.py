@@ -12,6 +12,7 @@ from unittest.mock import ANY, MagicMock, Mock
 import pytest
 import torch
 import torch.nn as nn
+from torch._dynamo import OptimizedModule
 from torch.distributed.fsdp.fully_sharded_data_parallel import CPUOffload, FullyShardedDataParallel, MixedPrecision
 from torch.distributed.fsdp.wrap import ModuleWrapPolicy, always_wrap_policy, size_based_auto_wrap_policy, wrap
 from torchmetrics import Accuracy
@@ -971,3 +972,30 @@ def test_save_sharded_and_consolidate_and_load(tmp_path):
         max_steps=4,
     )
     trainer.fit(model, ckpt_path=checkpoint_path_full)
+
+
+@RunIf(min_cuda_gpus=2, standalone=True, dynamo=True)
+@mock.patch("lightning.fabric.wrappers.torch.compile", Mock(wraps=torch.compile))
+@mock.patch.dict(os.environ, {})
+def test_reapply_compile():
+    """Test that Trainer can rewrap a compiled module such that compilation happens over the FSDP-wrapper."""
+    trainer = Trainer(accelerator="gpu", devices=2, strategy="fsdp", max_steps=2, logger=False)
+
+    model = BoringModel()
+    compile_kwargs = {"mode": "reduce-overhead"}
+    compiled_model = torch.compile(model, **compile_kwargs)
+    torch.compile.reset_mock()
+
+    trainer.fit(compiled_model)
+    trainer_model = trainer.strategy.model
+
+    assert isinstance(trainer_model, OptimizedModule)
+    assert isinstance(trainer_model._orig_mod, FullyShardedDataParallel)
+    # Assert we called compile again with the same arguments, but on the FSDP-wrapped module
+    torch.compile.assert_called_with(trainer_model._orig_mod, **compile_kwargs)
+
+    assert trainer_model._orig_mod.module == model
+
+    # Smoke-testing forward to ensure we don't get compilation errors
+    for _ in range(3):
+        trainer_model(torch.randn(2, 32, device="gpu")).sum().backward()

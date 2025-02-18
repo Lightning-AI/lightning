@@ -46,18 +46,14 @@ def test_trainer_compiled_model(_, tmp_path, monkeypatch, mps_count_0):
 
     model = BoringModel()
     compiled_model = torch.compile(model)
-    assert model._compiler_ctx is compiled_model._compiler_ctx  # shared reference
 
     # can train with compiled model
     trainer = Trainer(**trainer_kwargs)
     trainer.fit(compiled_model)
-    assert trainer.model._compiler_ctx["compiler"] == "dynamo"
+    assert isinstance(trainer.strategy.model, torch._dynamo.OptimizedModule)
 
     # the compiled model can be uncompiled
     to_uncompiled_model = to_uncompiled(compiled_model)
-    assert model._compiler_ctx is None
-    assert compiled_model._compiler_ctx is None
-    assert to_uncompiled_model._compiler_ctx is None
 
     # the compiled model needs to be passed
     with pytest.raises(ValueError, match="required to be a compiled LightningModule"):
@@ -66,7 +62,7 @@ def test_trainer_compiled_model(_, tmp_path, monkeypatch, mps_count_0):
     # the uncompiled model can be fitted
     trainer = Trainer(**trainer_kwargs)
     trainer.fit(model)
-    assert trainer.model._compiler_ctx is None
+    assert not isinstance(trainer.strategy.model, torch._dynamo.OptimizedModule)
 
     # some strategies do not support it
     if RequirementCache("deepspeed"):
