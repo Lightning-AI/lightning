@@ -70,6 +70,7 @@ def test_amp_precision_backward():
 def test_amp_precision_optimizer_step_with_scaler():
     precision = MixedPrecision(precision="16-mixed", device="cuda")
     precision.scaler = Mock()
+    precision.scaler.get_scale = Mock(return_value=1.0)
     optimizer = Mock()
 
     precision.optimizer_step(optimizer, keyword="arg")

@@ -469,6 +469,9 @@ class _TrainingEpochLoop(loops._Loop):
                         )
                         continue
 
+                if getattr(self.trainer.optimizers[config.opt_idx], "_skip_next_scheduler_step", False):
+                    continue
+
                 self.scheduler_progress.increment_ready()
 
                 # update LR

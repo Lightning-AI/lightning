@@ -92,8 +92,10 @@ class MixedPrecision(Precision):
         # in manual optimization, the closure does not return a value
         if not skip_unscaling:
             # note: the scaler will skip the `optimizer.step` if nonfinite gradients are found
-            step_output = self.scaler.step(optimizer, **kwargs)  # type: ignore[arg-type]
+            previous_scale = self.scaler.get_scale()
+            step_output = self.scaler.step(optimizer, **kwargs)
             self.scaler.update()
+            optimizer._skip_next_scheduler_step = self.scaler.get_scale() < previous_scale
             return step_output
         return closure_result
 
