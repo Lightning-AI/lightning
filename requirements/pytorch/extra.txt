@@ -8,5 +8,5 @@ hydra-core >=1.2.0, <1.4.0
 jsonargparse[signatures] >=4.27.7, <=4.35.0
 rich >=12.3.0, <13.6.0
 tensorboardX >=2.2, <2.7.0  # min version is set by torch.onnx missing attribute
-bitsandbytes >=0.44.0,<0.44.2; sys_platform == 'linux' or sys_platform == 'win32'
-bitsandbytes >=0.42.0,<0.43.0 ; sys_platform == 'darwin'
+bitsandbytes >=0.44.0,<0.45.3; sys_platform == 'linux' or sys_platform == 'win32'
+bitsandbytes >=0.42.0,<0.45.3 ; sys_platform == 'darwin'

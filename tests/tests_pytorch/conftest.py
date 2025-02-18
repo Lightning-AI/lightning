@@ -94,6 +94,7 @@ def restore_env_variables():
         "TF_CPP_MIN_LOG_LEVEL",
         "TF_GRPC_DEFAULT_OPTIONS",
         "XLA_FLAGS",
+        "TORCHINDUCTOR_CACHE_DIR",  # leaked by torch.compile
     }
     leaked_vars.difference_update(allowlist)
     assert not leaked_vars, f"test is leaking environment variable(s): {set(leaked_vars)}"

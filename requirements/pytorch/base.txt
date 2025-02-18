@@ -7,5 +7,5 @@ PyYAML >=5.4, <6.1.0
 fsspec[http] >=2022.5.0, <2024.4.0
 torchmetrics >=0.7.0, <1.5.0  # needed for using fixed compare_version
 packaging >=20.0, <=23.1
-typing-extensions >=4.4.0, <4.10.0
+typing-extensions >=4.4.0, <4.11.0
 lightning-utilities >=0.10.0, <0.12.0

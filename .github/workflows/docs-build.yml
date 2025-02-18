@@ -46,7 +46,7 @@ defaults:
 
 env:
   FREEZE_REQUIREMENTS: "1"
-  TORCH_URL: "https://download.pytorch.org/whl/cpu/torch_stable.html"
+  TORCH_URL: "https://download.pytorch.org/whl/cpu/"
   PYPI_CACHE_DIR: "_pip-wheels"
   PYPI_LOCAL_DIR: "pypi_pkgs/"
 
@@ -106,7 +106,7 @@ jobs:
           mkdir -p ${PYPI_CACHE_DIR}  # in case cache was not hit
           ls -lh ${PYPI_CACHE_DIR}
           pip install .[all] -U -r requirements/${{ matrix.pkg-name }}/docs.txt \
-            -f ${PYPI_LOCAL_DIR} -f ${PYPI_CACHE_DIR} -f ${TORCH_URL}
+            -f ${PYPI_LOCAL_DIR} -f ${PYPI_CACHE_DIR} --extra-index-url="${TORCH_URL}"
           pip list
       - name: Install req. for Notebooks/tutorials
         if: matrix.pkg-name == 'pytorch'

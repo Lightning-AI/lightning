@@ -111,17 +111,17 @@ def test_model_saves_on_multi_gpu(tmp_path):
     assert os.path.exists(file_path) is True
 
 
-@RunIf(onnx=True)
+# todo: investigate where the logging happening in torch.onnx for PT 2.6+
+@RunIf(onnx=True, max_torch="2.6.0")
 def test_verbose_param(tmp_path, capsys):
     """Test that output is present when verbose parameter is set."""
     model = BoringModel()
     model.example_input_array = torch.randn(5, 32)
     file_path = os.path.join(tmp_path, "model.onnx")
 
-    with patch("torch.onnx.log", autospec=True) as test:
+    with patch("torch.onnx.log", autospec=True) as mocked:
         model.to_onnx(file_path, verbose=True)
-    args, _ = test.call_args
-    prefix, _ = args
+    (prefix, _), _ = mocked.call_args
     assert prefix == "Exported graph: "
 
 

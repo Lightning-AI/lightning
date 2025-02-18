@@ -43,7 +43,7 @@ on:
 
 env:
   LEGACY_FOLDER: "tests/legacy"
-  TORCH_URL: "https://download.pytorch.org/whl/cpu/torch_stable.html"
+  TORCH_URL: "https://download.pytorch.org/whl/cpu/"
 
 defaults:
   run:
@@ -67,12 +67,12 @@ jobs:
           PACKAGE_NAME: pytorch
           FREEZE_REQUIREMENTS: 1
         timeout-minutes: 20
-        run: pip install . -f ${TORCH_URL}
+        run: pip install . --extra-index-url="${TORCH_URL}"
         if: inputs.pl_version == ''
 
       - name: Install PL version
         timeout-minutes: 20
-        run: pip install "pytorch-lightning==${{ inputs.pl_version }}" -f ${TORCH_URL}
+        run: pip install "pytorch-lightning==${{ inputs.pl_version }}" --extra-index-url="${TORCH_URL}"
         if: inputs.pl_version != ''
 
       - name: Adjust tests -> PL

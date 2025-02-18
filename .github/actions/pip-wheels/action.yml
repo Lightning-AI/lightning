@@ -46,8 +46,8 @@ runs:
       run: |
         # cat requirements.dump
         pip wheel -r requirements.dump --prefer-binary \
-          --wheel-dir=.wheels \
-          -f ${{ inputs.torch-url }} -f ${{ inputs.wheel-dir }}
+          --wheel-dir=".wheels" \
+          --extra-index-url=${{ inputs.torch-url }} -f ${{ inputs.wheel-dir }}
         ls -lh .wheels/
       shell: bash
 

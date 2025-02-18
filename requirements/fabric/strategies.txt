@@ -6,5 +6,5 @@
 # note: is a bug around 0.10 with `MPS_Accelerator must implement all abstract methods`
 #  shall be resolved by https://github.com/microsoft/DeepSpeed/issues/4372
 deepspeed >=0.8.2, <=0.9.3; platform_system != "Windows" and platform_system != "Darwin"  # strict
-bitsandbytes >=0.44.0,<0.44.2; sys_platform == 'linux' or sys_platform == 'win32'
-bitsandbytes >=0.42.0,<0.43.0 ; sys_platform == 'darwin'
+bitsandbytes >=0.45.2,<0.45.3; sys_platform == 'linux' or sys_platform == 'win32'
+bitsandbytes >=0.45.2,<0.45.3 ; sys_platform == 'darwin'

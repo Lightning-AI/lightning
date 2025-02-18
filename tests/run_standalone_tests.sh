@@ -17,7 +17,7 @@ set -e
 
 # Batch size for testing: Determines how many standalone test invocations run in parallel
 # It can be set through the env variable PL_STANDALONE_TESTS_BATCH_SIZE and defaults to 6 if not set
-test_batch_size="${PL_STANDALONE_TESTS_BATCH_SIZE:-3}"
+test_batch_size="${PL_STANDALONE_TESTS_BATCH_SIZE:-5}"
 source="${PL_STANDALONE_TESTS_SOURCE:-"lightning"}"
 # this is the directory where the tests are located
 test_dir=$1 # parse the first argument

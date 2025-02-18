@@ -23,7 +23,7 @@ defaults:
 
 env:
   FREEZE_REQUIREMENTS: 1
-  TORCH_URL: "https://download.pytorch.org/whl/cpu/torch_stable.html"
+  TORCH_URL: "https://download.pytorch.org/whl/cpu/"
   PYTHON_VER: "3.9"
 
 jobs:
@@ -60,7 +60,7 @@ jobs:
           python-version: ${{ env.PYTHON_VER }}
       - name: install Package
         run: |
-          pip install . -f ${TORCH_URL}
+          pip install . --extra-index-url="${TORCH_URL}"
           pip list
       - name: package Version
         id: lai-package
