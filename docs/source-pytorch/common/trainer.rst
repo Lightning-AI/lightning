@@ -1077,6 +1077,32 @@ With :func:`torch.inference_mode` disabled, you can enable the grad of your mode
     trainer = Trainer(inference_mode=False)
     trainer.validate(model)
 
+enable_autolog_hparams
+^^^^^^^^^^^^^^^^^^^^^^
+
+Whether to log hyperparameters at the start of a run. Defaults to True.
+
+.. testcode::
+
+    # default used by the Trainer
+    trainer = Trainer(enable_autolog_hparams=True)
+
+    # disable logging hyperparams
+    trainer = Trainer(enable_autolog_hparams=False)
+
+With the parameter set to false, you can add custom code to log hyperparameters.
+
+.. code-block:: python
+
+    model = LitModel()
+    trainer = Trainer(enable_autolog_hparams=False)
+    for logger in trainer.loggers:
+        if isinstance(logger, lightning.pytorch.loggers.CSVLogger):
+            logger.log_hyperparams(hparams_dict_1)
+        else:
+            logger.log_hyperparams(hparams_dict_2)
+
+You can also use `self.logger.log_hyperparams(...)` inside `LightningModule` to log.
 
 -----
 

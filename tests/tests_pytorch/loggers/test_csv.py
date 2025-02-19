@@ -165,7 +165,7 @@ def test_metrics_reset_after_save(tmp_path):
 
 
 @mock.patch(
-    # Mock the existance check, so we can simulate appending to the metrics file
+    # Mock the existence check, so we can simulate appending to the metrics file
     "lightning.fabric.loggers.csv_logs._ExperimentWriter._check_log_dir_exists"
 )
 def test_append_metrics_file(_, tmp_path):

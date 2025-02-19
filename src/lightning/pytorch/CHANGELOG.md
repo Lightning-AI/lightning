@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
+## [unreleased] - YYYY-MM-DD
+
+### Added
+
+- Add enable_autolog_hparams argument to Trainer ([#20593](https://github.com/Lightning-AI/pytorch-lightning/pull/20593))
+
+### Changed
+
+### Removed
+
+### Fixed
+
 ## [2.5.0] - 2024-12-19
 
 ### Added
