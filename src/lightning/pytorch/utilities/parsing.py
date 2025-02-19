@@ -17,6 +17,7 @@ import copy
 import inspect
 import pickle
 import types
+from argparse import Namespace
 from collections.abc import MutableMapping, Sequence
 from dataclasses import fields, is_dataclass
 from typing import Any, Literal, Optional, Union
@@ -202,6 +203,11 @@ def save_hyperparameters(
             obj._hparams_name = "kwargs"
 
     # `hparams` are expected here
+
+    # filter out hp based on ignore list
+    if isinstance(hp, Namespace):
+        hp = vars(hp)
+    hp = {k: v for k, v in hp.items() if k not in ignore}
     obj._set_hparams(hp)
 
     for k, v in obj._hparams.items():
