@@ -526,12 +526,29 @@ class DeepSpeedStrategy(DDPStrategy):
         import deepspeed
 
         self._init_config_if_needed()
-        with deepspeed.zero.Init(
-            enabled=self.zero_stage_3,
-            remote_device=self.remote_device,
-            config_dict_or_path=self.config,
+        assert self.config is not None
+        # If we detect `'mics_shard_size' > 0` in `config['zero_optimization']`, use `deepspeed.zero.MiCS_Init(...)` instead of `deepspeed.zero.Init(...)`
+        # https://deepspeed.readthedocs.io/en/latest/zero3.html#mics-configurations
+        #! default deepspeed 0.9.0 is not compatible
+        if (
+            "zero_optimization" in self.config
+            and "mics_shard_size" in self.config["zero_optimization"]
+            and self.config["zero_optimization"]["mics_shard_size"] > 0
+            and self.zero_stage_3
         ):
-            yield
+            with deepspeed.zero.MiCS_Init(
+                enabled=self.zero_stage_3,
+                remote_device=self.remote_device,
+                config_dict_or_path=self.config,
+            ):
+                yield
+        else:
+            with deepspeed.zero.Init(
+                enabled=self.zero_stage_3,
+                remote_device=self.remote_device,
+                config_dict_or_path=self.config,
+            ):
+                yield
 
     def _set_deepspeed_activation_checkpointing(self) -> None:
         import deepspeed

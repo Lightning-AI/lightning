@@ -408,6 +408,7 @@ Here is some helpful information when setting up DeepSpeed ZeRO Stage 3 with Lig
 * Treat your GPU/CPU memory as one large pool. In some cases, you may not want to offload certain things (like activations) to provide even more space to offload model parameters
 * When offloading to the CPU, make sure to bump up the batch size as GPU memory will be freed
 * We also support sharded checkpointing. By passing ``save_full_weights=False`` to the ``DeepSpeedStrategy``, we'll save shards of the model which allows you to save extremely large models. However to load the model and run test/validation/predict you must use the Trainer object.
+* DeepSpeed provides `MiCS support <https://deepspeed.readthedocs.io/en/latest/zero3.html#deepspeed.runtime.zero.config.DeepSpeedZeroConfig.mics_shard_size>`_ which allows you to control how model parameters are sharded across GPUs. For example, with 16 GPUs, ZeRO-3 will shard the model into 16 pieces by default. Instead with ``mics_shard_size=8``, every 8 GPUs will keep a full copy of the model weights, reducing the communication overhead. You can set ``"zero_optimization":  {"stage": 3, "mics_shard_size": (shards num), ...}`` in a DeepSpeed config file to take advantage of this feature.
 
 .. _deepspeed-zero-stage-3-single-file:
 

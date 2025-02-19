@@ -414,3 +414,150 @@ def test_deepspeed_init_module_with_stages_1_2(stage, empty_init):
     zero_init_mock.assert_called_with(enabled=False, remote_device=None, config_dict_or_path=ANY)
     assert init_mock.call_count == int(not empty_init)
     assert model.layer.weight.dtype == torch.bfloat16
+
+
+@RunIf(min_cuda_gpus=2, standalone=True, deepspeed=True)
+def test_deepspeed_multigpu_stage_3_MiCS_support():
+    """Test to ensure ZeRO Stage 3 MiCS works with a parallel model."""
+    strategy = DeepSpeedStrategy(stage=3)
+    strategy.config["zero_optimization"]["stage"] = 3
+    strategy.config["zero_optimization"]["mics_shard_size"] = 1
+    strategy.config["zero_optimization"]["mics_hierarchical_params_gather"] = False
+
+    fabric = Fabric(
+        strategy=strategy,
+        accelerator="cuda",
+        devices=2,
+        precision="16-mixed",
+    )
+    fabric.launch()
+
+    def _make_block():
+        return nn.Sequential(nn.Linear(32, 32, bias=False), nn.ReLU())
+
+    with fabric.init_module():
+        model = nn.Sequential(*(_make_block() for _ in range(5)), nn.Linear(32, 3))
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
+    model, optimizer = fabric.setup(model, optimizer)
+
+    x = torch.rand(2, 32, device=fabric.device)
+    y = torch.ones(x.size(0), device=x.device, dtype=torch.long)
+    x = model(x)
+    x = x.float()  # Ensure output is in float32 for softmax operation
+    logits = F.softmax(x, dim=1)
+    loss = F.cross_entropy(logits, y)
+    fabric.backward(loss)
+    optimizer.step()
+    optimizer.zero_grad()
+
+
+@RunIf(min_cuda_gpus=2, standalone=True, deepspeed=True)
+def test_deepspeed_multigpu_stage_3_MiCS_offload_param_support():
+    """Test to ensure we can use DeepSpeed with ZeRO Stage param offload 3 MiCS Support."""
+    strategy = DeepSpeedStrategy(stage=3, offload_params_device="cpu")
+    strategy.config["zero_optimization"]["stage"] = 3
+    strategy.config["zero_optimization"]["mics_shard_size"] = 1
+    strategy.config["zero_optimization"]["mics_hierarchical_params_gather"] = False
+
+    fabric = Fabric(
+        strategy=strategy,
+        accelerator="cuda",
+        devices=2,
+        precision="16-mixed",
+    )
+    fabric.launch()
+
+    def _make_block():
+        return nn.Sequential(nn.Linear(32, 32, bias=False), nn.ReLU())
+
+    with fabric.init_module():
+        model = nn.Sequential(*(_make_block() for _ in range(5)), nn.Linear(32, 3))
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
+    model, optimizer = fabric.setup(model, optimizer)
+
+    x = torch.rand(2, 32, device=fabric.device)
+    y = torch.ones(x.size(0), device=x.device, dtype=torch.long)
+    x = model(x)
+    x = x.float()  # Ensure output is in float32 for softmax operation
+    logits = F.softmax(x, dim=1)
+    loss = F.cross_entropy(logits, y)
+    fabric.backward(loss)
+    optimizer.step()
+    optimizer.zero_grad()
+
+
+@RunIf(min_cuda_gpus=2, standalone=True, deepspeed=True)
+def test_deepspeed_multigpu_stage_3_MiCS_offload_param_optimizer_support():
+    """Test to ensure we can use DeepSpeed with ZeRO Stage param & optimizer offload 3 MiCS Support."""
+    strategy = DeepSpeedStrategy(stage=3, offload_params_device="cpu", offload_optimizer_device="cpu")
+    strategy.config["zero_optimization"]["stage"] = 3
+    strategy.config["zero_optimization"]["mics_shard_size"] = 1
+    strategy.config["zero_optimization"]["mics_hierarchical_params_gather"] = False
+
+    fabric = Fabric(
+        strategy=strategy,
+        accelerator="cuda",
+        devices=2,
+        precision="16-mixed",
+    )
+    fabric.launch()
+
+    def _make_block():
+        return nn.Sequential(nn.Linear(32, 32, bias=False), nn.ReLU())
+
+    with fabric.init_module():
+        model = nn.Sequential(*(_make_block() for _ in range(5)), nn.Linear(32, 3))
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
+    model, optimizer = fabric.setup(model, optimizer)
+
+    x = torch.rand(2, 32, device=fabric.device)
+    y = torch.ones(x.size(0), device=x.device, dtype=torch.long)
+    x = model(x)
+    x = x.float()  # Ensure output is in float32 for softmax operation
+    logits = F.softmax(x, dim=1)
+    loss = F.cross_entropy(logits, y)
+    fabric.backward(loss)
+    optimizer.step()
+    optimizer.zero_grad()
+
+
+@RunIf(min_cuda_gpus=4, standalone=True, deepspeed=True)
+def test_deepspeed_multigpu_stage_3_hierarchical_MiCS_support():
+    """Test to ensure we can use DeepSpeed with ZeRO Stage 3 MiCS Support ('mics_hierarchical_params_gather' =
+    True)."""
+    strategy = DeepSpeedStrategy(stage=3)
+    strategy.config["zero_optimization"]["stage"] = 3
+    strategy.config["zero_optimization"]["mics_shard_size"] = 2
+    strategy.config["zero_optimization"]["offload_param"] = {}
+    strategy.config["zero_optimization"]["offload_optimizer"] = {}
+    strategy.config["zero_optimization"]["mics_hierarchical_params_gather"] = True
+
+    fabric = Fabric(
+        strategy=strategy,
+        accelerator="cuda",
+        devices=2,
+        precision="16-mixed",
+    )
+    fabric.launch()
+
+    def _make_block():
+        return nn.Sequential(nn.Linear(32, 32, bias=False), nn.ReLU())
+
+    with fabric.init_module():
+        model = nn.Sequential(*(_make_block() for _ in range(5)), nn.Linear(32, 3))
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
+    model, optimizer = fabric.setup(model, optimizer)
+
+    x = torch.rand(2, 32, device=fabric.device)
+    y = torch.ones(x.size(0), device=x.device, dtype=torch.long)
+    x = model(x)
+    x = x.float()  # Ensure output is in float32 for softmax operation
+    logits = F.softmax(x, dim=1)
+    loss = F.cross_entropy(logits, y)
+    fabric.backward(loss)
+    optimizer.step()
+    optimizer.zero_grad()

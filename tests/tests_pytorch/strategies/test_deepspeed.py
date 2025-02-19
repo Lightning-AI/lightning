@@ -1279,3 +1279,126 @@ def test_deepspeed_load_checkpoint_validate_path(tmp_path):
     checkpoint_path.touch()
     with pytest.raises(FileNotFoundError, match=f"Try to load using this parent directory instead: {tmp_path}"):
         strategy.load_checkpoint(checkpoint_path=checkpoint_path)
+
+
+@RunIf(min_cuda_gpus=2, standalone=True, deepspeed=True)
+def test_deepspeed_multigpu_stage_3_MiCS_support(tmp_path):
+    """Test to ensure we can use DeepSpeed with basic ZeRO Stage 3 MiCS Support."""
+    model = ModelParallelBoringModel()
+    strategy = DeepSpeedStrategy(stage=3)
+    strategy.config["zero_optimization"]["stage"] = 3
+    strategy.config["zero_optimization"]["mics_shard_size"] = 1
+    strategy.config["zero_optimization"]["mics_hierarchical_params_gather"] = False
+
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        strategy=strategy,
+        accelerator="gpu",
+        devices=2,
+        fast_dev_run=True,
+        precision="16-mixed",
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    trainer.test(model)
+    trainer.fit(model)
+
+    _assert_save_model_is_equal(model, tmp_path, trainer)
+    assert isinstance(trainer.strategy, DeepSpeedStrategy)
+    assert "zero_optimization" in trainer.strategy.config
+    assert trainer.strategy.config["zero_optimization"]["mics_hierarchical_params_gather"] is False
+    assert trainer.strategy.config["zero_optimization"]["mics_shard_size"] == 1
+    assert trainer.strategy.config["zero_optimization"]["stage"] == 3
+
+
+@RunIf(min_cuda_gpus=2, standalone=True, deepspeed=True)
+def test_deepspeed_multigpu_stage_3_MiCS_offload_param_support(tmp_path):
+    """Test to ensure we can use DeepSpeed with ZeRO Stage param offload 3 MiCS Support \
+        However, in some past pratice, offload param + mics + torchrun will cause inner exception in multi-node environment. \
+        Probably this exception is caused by torchrun, not deepspeed. """
+    model = ModelParallelBoringModel()
+    strategy = DeepSpeedStrategy(stage=3, offload_params_device="cpu")
+    strategy.config["zero_optimization"]["stage"] = 3
+    strategy.config["zero_optimization"]["mics_shard_size"] = 1
+    strategy.config["zero_optimization"]["mics_hierarchical_params_gather"] = False
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        strategy=strategy,
+        accelerator="gpu",
+        devices=2,
+        fast_dev_run=True,
+        precision="16-mixed",
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    trainer.test(model)
+    trainer.fit(model)
+
+    _assert_save_model_is_equal(model, tmp_path, trainer)
+    assert isinstance(trainer.strategy, DeepSpeedStrategy)
+    assert "zero_optimization" in trainer.strategy.config
+    assert trainer.strategy.config["zero_optimization"]["mics_hierarchical_params_gather"] is False
+    assert trainer.strategy.config["zero_optimization"]["mics_shard_size"] == 1
+    assert trainer.strategy.config["zero_optimization"]["stage"] == 3
+
+
+@RunIf(min_cuda_gpus=2, standalone=True, deepspeed=True)
+def test_deepspeed_multigpu_stage_3_MiCS_offload_param_optimizer_support(tmp_path):
+    """Test to ensure we can use DeepSpeed with ZeRO Stage param & optimizer offload 3 MiCS Support."""
+    model = ModelParallelBoringModel()
+    strategy = DeepSpeedStrategy(stage=3, offload_params_device="cpu", offload_optimizer_device="cpu")
+    strategy.config["zero_optimization"]["stage"] = 3
+    strategy.config["zero_optimization"]["mics_shard_size"] = 1
+    strategy.config["zero_optimization"]["mics_hierarchical_params_gather"] = False
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        strategy=strategy,
+        accelerator="gpu",
+        devices=2,
+        fast_dev_run=True,
+        precision="16-mixed",
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    trainer.test(model)
+    trainer.fit(model)
+
+    _assert_save_model_is_equal(model, tmp_path, trainer)
+    assert isinstance(trainer.strategy, DeepSpeedStrategy)
+    assert "zero_optimization" in trainer.strategy.config
+    assert trainer.strategy.config["zero_optimization"]["mics_hierarchical_params_gather"] is False
+    assert trainer.strategy.config["zero_optimization"]["mics_shard_size"] == 1
+    assert trainer.strategy.config["zero_optimization"]["stage"] == 3
+
+
+@RunIf(min_cuda_gpus=4, standalone=True, deepspeed=True)
+def test_deepspeed_multigpu_stage_3_hierarchical_MiCS_support(tmp_path):
+    """Test to ensure we can use DeepSpeed with ZeRO Stage 3 MiCS Support ('mics_hierarchical_params_gather' =
+    True)."""
+    model = ModelParallelBoringModel()
+    strategy = DeepSpeedStrategy(stage=3)
+    strategy.config["zero_optimization"]["stage"] = 3
+    strategy.config["zero_optimization"]["mics_shard_size"] = 2
+    strategy.config["zero_optimization"]["offload_param"] = {}
+    strategy.config["zero_optimization"]["offload_optimizer"] = {}
+    strategy.config["zero_optimization"]["mics_hierarchical_params_gather"] = True
+    # Forming a 2 x 2 hierarchy
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        strategy=strategy,
+        accelerator="gpu",
+        devices=4,
+        fast_dev_run=True,
+        precision="16-mixed",
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    trainer.test(model)
+    trainer.fit(model)
+
+    _assert_save_model_is_equal(model, tmp_path, trainer)
+    assert isinstance(trainer.strategy, DeepSpeedStrategy)
+    assert "zero_optimization" in trainer.strategy.config
+    assert trainer.strategy.config["zero_optimization"]["mics_hierarchical_params_gather"] is True
+    assert trainer.strategy.config["zero_optimization"]["mics_shard_size"] == 2
+    assert trainer.strategy.config["zero_optimization"]["stage"] == 3
