@@ -32,6 +32,7 @@ from lightning_utilities.core.apply_func import apply_to_collection
 from lightning_utilities.core.overrides import is_overridden
 from torch import Tensor
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import BatchSampler, DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 
 import lightning.fabric
@@ -206,6 +207,7 @@ class Fabric:
         self,
         module: nn.Module,
         *optimizers: Optimizer,
+        scheduler: Optional[_LRScheduler] = None,
         move_to_device: bool = True,
         _reapply_compile: bool = True,
     ) -> Any:  # no specific return because the way we want our API to look does not play well with mypy
@@ -214,6 +216,7 @@ class Fabric:
         Args:
             module: A :class:`torch.nn.Module` to set up
             *optimizers: The optimizer(s) to set up (no optimizers is also possible)
+            scheduler: The learning rate scheduler to set up (no learning rate scheduler is also possible)
             move_to_device: If set ``True`` (default), moves the model to the correct device. Set this to ``False``
                 and alternatively use :meth:`to_device` manually.
             _reapply_compile: If ``True`` (default), and the model was ``torch.compile``d before, the
@@ -222,7 +225,8 @@ class Fabric:
                 FSDP etc.). Set it to ``False`` if compiling DDP/FSDP is causing issues.
 
         Returns:
-            The tuple containing wrapped module and the optimizers, in the same order they were passed in.
+            The tuple containing wrapped module, optimizers, and an optional learning rate scheduler,
+            in the same order they were passed in.
 
         """
         self._validate_setup(module, optimizers)
@@ -236,8 +240,8 @@ class Fabric:
 
         # Let accelerator/plugin wrap and connect the models and optimizers
         if optimizers:
-            module, optimizers = self._strategy.setup_module_and_optimizers(  # type: ignore[assignment]
-                module, list(optimizers)
+            module, optimizers, scheduler = self._strategy.setup_module_and_optimizers(  # type: ignore[assignment]
+                module, list(optimizers), scheduler
             )
         else:
             module = self._strategy.setup_module(module)
@@ -266,7 +270,7 @@ class Fabric:
 
         if optimizers:
             # join both types in a tuple for API convenience
-            return (module, *optimizers)
+            return (module, *optimizers, scheduler) if scheduler is not None else (module, *optimizers)
         return module
 
     def setup_module(

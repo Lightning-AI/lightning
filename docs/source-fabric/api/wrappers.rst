@@ -124,7 +124,7 @@ If you were to run this model in Fabric with multiple devices (DDP or FSDP), you
     # OK: Calling the model directly
     output = model(torch.randn(10))
 
-    # OK: Calling the model's forward (equivalent to the abvoe)
+    # OK: Calling the model's forward (equivalent to the above)
     output = model.forward(torch.randn(10))
 
     # ERROR: Calling another method that calls forward indirectly

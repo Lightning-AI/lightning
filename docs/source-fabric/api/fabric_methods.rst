@@ -40,12 +40,16 @@ Moves the model and optimizer to the correct device automatically.
 
     model = nn.Linear(32, 64)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
+    scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.3, total_iters=10)
 
     # Set up model and optimizer for accelerated training
     model, optimizer = fabric.setup(model, optimizer)
 
     # If you don't want Fabric to set the device
     model, optimizer = fabric.setup(model, optimizer, move_to_device=False)
+
+    # If you want to additionally register a learning rate scheduler with compatible strategies such as DeepSpeed
+    model, optimizer, scheduler = fabric.setup(model, optimizer, scheduler)
 
 
 The setup method also prepares the model for the selected precision choice so that operations during ``forward()`` get

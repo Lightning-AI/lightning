@@ -21,6 +21,7 @@ import torch
 from torch import Tensor
 from torch.nn import Module
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
 from typing_extensions import override
 
@@ -196,8 +197,8 @@ class XLAFSDPStrategy(ParallelStrategy, _Sharded):
 
     @override
     def setup_module_and_optimizers(
-        self, module: Module, optimizers: list[Optimizer]
-    ) -> tuple[Module, list[Optimizer]]:
+        self, module: Module, optimizers: list[Optimizer], scheduler: Optional[_LRScheduler] = None
+    ) -> tuple[Module, list[Optimizer], Optional[_LRScheduler]]:
         """Returns NotImplementedError since for XLAFSDP optimizer setup must happen after module setup."""
         raise NotImplementedError(
             f"The `{type(self).__name__}` does not support the joint setup of module and optimizer(s)."
