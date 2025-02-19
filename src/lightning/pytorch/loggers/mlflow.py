@@ -178,7 +178,7 @@ class MLFlowLogger(Logger):
 
         if self._experiment_id is None:
             expt = self._mlflow_client.get_experiment_by_name(self._experiment_name)
-            if expt is not None:
+            if expt is not None and expt.lifecycle_stage != "deleted":
                 self._experiment_id = expt.experiment_id
             else:
                 log.warning(f"Experiment with name {self._experiment_name} not found. Creating it.")
