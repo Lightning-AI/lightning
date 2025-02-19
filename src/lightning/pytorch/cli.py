@@ -314,6 +314,7 @@ class LightningCLI:
         trainer_defaults: Optional[dict[str, Any]] = None,
         seed_everything_default: Union[bool, int] = True,
         parser_kwargs: Optional[Union[dict[str, Any], dict[str, dict[str, Any]]]] = None,
+        parser_class: type[LightningArgumentParser] = LightningArgumentParser,
         subclass_mode_model: bool = False,
         subclass_mode_data: bool = False,
         args: ArgsType = None,
@@ -367,6 +368,7 @@ class LightningCLI:
         self.trainer_defaults = trainer_defaults or {}
         self.seed_everything_default = seed_everything_default
         self.parser_kwargs = parser_kwargs or {}
+        self.parser_class = parser_class
         self.auto_configure_optimizers = auto_configure_optimizers
 
         self.model_class = model_class
@@ -404,7 +406,7 @@ class LightningCLI:
     def init_parser(self, **kwargs: Any) -> LightningArgumentParser:
         """Method that instantiates the argument parser."""
         kwargs.setdefault("dump_header", [f"lightning.pytorch=={pl.__version__}"])
-        parser = LightningArgumentParser(**kwargs)
+        parser = self.parser_class(**kwargs)
         parser.add_argument(
             "-c", "--config", action=ActionConfigFile, help="Path to a configuration file in json or yaml format."
         )

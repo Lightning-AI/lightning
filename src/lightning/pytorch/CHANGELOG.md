@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
+## [unreleased] - YYYY-MM-DD
+
+### Added
+
+- Allow LightningCLI to use a customized argument parser class ([#20596](https://github.com/Lightning-AI/pytorch-lightning/pull/20596))
+
+### Changed
+
+### Removed
+
+### Fixed
+
 ## [2.5.0] - 2024-12-19
 
 ### Added
