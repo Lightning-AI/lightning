@@ -69,7 +69,7 @@ When training distributed models with :doc:`FSDP/TP <model_parallel/index>` or D
 
 .. code-block:: python
 
-    # Recommended for FSDP, TP and DeepSpeed
+    # Recommended for FSDP and TP
     with fabric.init_module(empty_init=True):
         model = GPT3()  # parameters are placed on the meta-device
 
@@ -78,6 +78,17 @@ When training distributed models with :doc:`FSDP/TP <model_parallel/index>` or D
     # Make sure to create the optimizer only after the model has been set up
     optimizer = torch.optim.Adam(model.parameters())
     optimizer = fabric.setup_optimizers(optimizer)
+
+With DeepSpeed Stage 3, the use of :meth:`~lightning.fabric.fabric.Fabric.init_module` context manager is necessesary for the model to be sharded correctly instead of attempted to be put on the GPU in its entirety. Deepspeed requires the models and optimizer to be set up jointly.
+
+.. code-block:: python
+
+    # Required with DeepSpeed Stage 3
+    with fabric.init_module(empty_init=True):
+        model = GPT3()
+
+    optimizer = torch.optim.Adam(model.parameters())
+    model, optimizer = fabric.setup(model, optimizer)
 
 .. note::
     Empty-init is experimental and the behavior may change in the future.
