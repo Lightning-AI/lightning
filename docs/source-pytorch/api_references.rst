@@ -48,6 +48,7 @@ callbacks
     ThroughputMonitor
     Timer
     TQDMProgressBar
+    WeightAveraging
 
 cli
 -----
