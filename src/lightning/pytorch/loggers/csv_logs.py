@@ -55,15 +55,10 @@ class ExperimentWriter(_FabricExperimentWriter):
         self.hparams: dict[str, Any] = {}
 
     def log_hparams(self, params: dict[str, Any]) -> None:
-        """Record hparams."""
+        """Record hparams and save into files."""
         self.hparams.update(params)
-
-    @override
-    def save(self) -> None:
-        """Save recorded hparams and metrics into files."""
         hparams_file = os.path.join(self.log_dir, self.NAME_HPARAMS_FILE)
         save_hparams_to_yaml(hparams_file, self.hparams)
-        return super().save()
 
 
 class CSVLogger(Logger, FabricCSVLogger):
@@ -144,7 +139,7 @@ class CSVLogger(Logger, FabricCSVLogger):
 
     @override
     @rank_zero_only
-    def log_hyperparams(self, params: Union[dict[str, Any], Namespace]) -> None:
+    def log_hyperparams(self, params: Optional[Union[dict[str, Any], Namespace]] = None) -> None:
         params = _convert_params(params)
         self.experiment.log_hparams(params)
 

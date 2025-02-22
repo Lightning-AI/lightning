@@ -75,7 +75,6 @@ def test_named_version(tmp_path):
 
     logger = CSVLogger(save_dir=tmp_path, name=exp_name, version=expected_version)
     logger.log_hyperparams({"a": 1, "b": 2})
-    logger.save()
     assert logger.version == expected_version
     assert os.listdir(tmp_path / exp_name) == [expected_version]
     assert os.listdir(tmp_path / exp_name / expected_version)
@@ -85,7 +84,7 @@ def test_named_version(tmp_path):
 def test_no_name(tmp_path, name):
     """Verify that None or empty name works."""
     logger = CSVLogger(save_dir=tmp_path, name=name)
-    logger.save()
+    logger.log_hyperparams()
     assert os.path.normpath(logger.root_dir) == str(tmp_path)  # use os.path.normpath to handle trailing /
     assert os.listdir(tmp_path / "version_0")
 
@@ -116,7 +115,6 @@ def test_log_hyperparams(tmp_path):
         "layer": torch.nn.BatchNorm1d,
     }
     logger.log_hyperparams(hparams)
-    logger.save()
 
     path_yaml = os.path.join(logger.log_dir, ExperimentWriter.NAME_HPARAMS_FILE)
     params = load_hparams_from_yaml(path_yaml)
