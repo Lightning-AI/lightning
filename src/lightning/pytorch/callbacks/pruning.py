@@ -282,7 +282,7 @@ class ModelPruning(Callback):
         src = getattr(old, name)
         if dst is None or src is None or not isinstance(dst, Tensor) or not isinstance(src, Tensor):
             return
-        dst.data = src.data.to(dst.device)
+        dst.data = src.data.to(dst.device).clone()
 
     def apply_lottery_ticket_hypothesis(self) -> None:
         r"""Lottery ticket hypothesis algorithm (see page 2 of the paper):
