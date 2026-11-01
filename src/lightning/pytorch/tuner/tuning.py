@@ -195,9 +195,10 @@ class Tuner:
         lr_finder_callback._early_exit = True
         self._trainer.callbacks = [lr_finder_callback] + self._trainer.callbacks
 
-        self._trainer.fit(model, train_dataloaders, val_dataloaders, datamodule)
-
-        self._trainer.callbacks = [cb for cb in self._trainer.callbacks if cb is not lr_finder_callback]
+        try:
+            self._trainer.fit(model, train_dataloaders, val_dataloaders, datamodule)
+        finally:
+            self._trainer.callbacks = [cb for cb in self._trainer.callbacks if cb is not lr_finder_callback]
 
         return lr_finder_callback.optimal_lr
 

@@ -264,6 +264,7 @@ def _lr_find(
     lr_finder = _LRFinder(mode, min_lr, max_lr, num_training)
 
     lr_finder_finished = False
+    params_restored = False
     try:
         # Configure optimizer and scheduler
         lr_finder._exchange_scheduler(trainer)
@@ -280,6 +281,7 @@ def _lr_find(
         lr_finder._total_batch_idx = trainer.fit_loop.total_batch_idx  # for debug purpose
 
         __lr_finder_restore_params(trainer, params)
+        params_restored = True
 
         if trainer.progress_bar_callback:
             trainer.progress_bar_callback.enable()
@@ -290,6 +292,10 @@ def _lr_find(
     except Exception as ex:
         raise ex
     finally:
+        if not params_restored:
+            __lr_finder_restore_params(trainer, params)
+            if trainer.progress_bar_callback:
+                trainer.progress_bar_callback.enable()
         # Restore initial state of model (this will also restore the original optimizer state)
         trainer._checkpoint_connector.restore(ckpt_path, weights_only=weights_only)
         trainer.strategy.remove_checkpoint(ckpt_path)
