@@ -1637,6 +1637,127 @@ def test_current_score_when_nan(tmp_path, mode: str):
     assert model_checkpoint.current_score == expected
 
 
+def test_best_model_metrics(tmp_path):
+    """Ensure ModelCheckpoint correctly tracks and restores best_model_metrics."""
+
+    class TestModel(BoringModel):
+        def training_step(self, batch, batch_idx):
+            loss = super().training_step(batch, batch_idx)
+            self.log("train_loss", loss["loss"])
+            self.log("train_metric", (self.current_epoch + 1) / 10)
+            return loss
+
+        def validation_step(self, batch, batch_idx):
+            output = super().validation_step(batch, batch_idx)
+            loss = output["x"]
+            self.log("val_loss", loss)
+            self.log("val_metric", (self.current_epoch + 1) / 10)
+            return loss
+
+    checkpoint = ModelCheckpoint(
+        dirpath=tmp_path,
+        save_top_k=3,
+        monitor="val_metric",
+        mode="min",
+    )
+
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        max_epochs=3,
+        limit_train_batches=1,
+        limit_val_batches=1,
+        callbacks=[checkpoint],
+        logger=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+
+    trainer.fit(TestModel())
+
+    assert hasattr(checkpoint, "best_model_metrics")
+    assert isinstance(checkpoint.best_model_metrics, dict)
+    assert "val_metric" in checkpoint.best_model_metrics
+    assert checkpoint.best_model_metrics["val_metric"] == 0.1  # lowest value
+    assert "val_loss" in checkpoint.best_model_metrics
+    assert "train_loss" in checkpoint.best_model_metrics
+    assert "train_metric" in checkpoint.best_model_metrics
+
+    best_ckpt_path = checkpoint.best_model_path
+    assert best_ckpt_path
+    assert os.path.exists(best_ckpt_path)
+
+    loaded = torch.load(best_ckpt_path, weights_only=False)
+
+    callbacks_state = loaded.get("callbacks", {})
+    assert callbacks_state  # ensure not empty
+
+    ckpt_key = next(
+        (k for k in callbacks_state if k.startswith("ModelCheckpoint")),
+        None,
+    )
+
+    assert ckpt_key is not None
+
+    loaded_metrics = callbacks_state[ckpt_key]["best_model_metrics"]
+
+    assert isinstance(loaded_metrics, dict)
+    assert loaded_metrics == checkpoint.best_model_metrics
+    assert loaded_metrics["val_metric"] == 0.1
+
+
+@pytest.mark.parametrize("mode", ["min", "max"])
+def test_best_model_metrics_mode(tmp_path, mode: str):
+    """Ensure ModelCheckpoint.best_model_metrics respects the 'mode' parameter and is restored correctly."""
+
+    class TestModel(BoringModel):
+        def validation_step(self, batch, batch_idx):
+            output = super().validation_step(batch, batch_idx)
+            metric_value = (self.current_epoch + 1) / 10
+            self.log("val_metric", metric_value)
+            return output["x"]
+
+    checkpoint = ModelCheckpoint(dirpath=tmp_path, save_top_k=1, monitor="val_metric", mode=mode)
+
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        max_epochs=3,
+        limit_train_batches=1,
+        limit_val_batches=1,
+        callbacks=[checkpoint],
+        logger=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+
+    trainer.fit(TestModel())
+
+    assert checkpoint.best_model_metrics is not None
+    assert "val_metric" in checkpoint.best_model_metrics
+
+    expected_value = 0.1 if mode == "min" else 0.3
+    assert checkpoint.best_model_metrics["val_metric"] == expected_value
+
+    # load the checkpoint and verify metrics are restored
+    best_ckpt_path = checkpoint.best_model_path
+    assert best_ckpt_path
+    assert os.path.exists(best_ckpt_path)
+
+    loaded = torch.load(best_ckpt_path, weights_only=False)
+    callbacks_state = loaded.get("callbacks", {})
+    assert callbacks_state
+
+    ckpt_key = next(
+        (k for k in callbacks_state if k.startswith("ModelCheckpoint")),
+        None,
+    )
+    assert ckpt_key is not None
+
+    loaded_metrics = callbacks_state[ckpt_key]["best_model_metrics"]
+
+    assert isinstance(loaded_metrics, dict)
+    assert loaded_metrics["val_metric"] == expected_value
+
+
 @pytest.mark.parametrize("use_omegaconf", [False, pytest.param(True, marks=RunIf(omegaconf=True))])
 def test_hparams_type(tmp_path, use_omegaconf):
     class TestModel(BoringModel):
