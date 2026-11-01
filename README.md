@@ -124,7 +124,7 @@ pip install https://github.com/Lightning-AI/lightning/archive/refs/heads/master.
 or from testing PyPI
 
 ```bash
-pip install -iU https://test.pypi.org/simple/ pytorch-lightning
+pip install -U -i https://test.pypi.org/simple/ lightning
 ```
 
 </details>
