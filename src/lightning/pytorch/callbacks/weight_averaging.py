@@ -111,6 +111,8 @@ class WeightAveraging(Callback):
         # negative value means that if self.should_update(epoch_idx=0) returns True, the first update is after the first
         # epoch.
         self._latest_update_epoch = -1
+        # Track the temporary validation swap so exceptions can restore the training model.
+        self._validation_weights_swapped = False
 
     def should_update(self, step_idx: Optional[int] = None, epoch_idx: Optional[int] = None) -> bool:
         """Called after every optimizer step and after every training epoch to check whether the average model should
@@ -225,6 +227,7 @@ class WeightAveraging(Callback):
         """
         if self._average_model is not None:
             self._swap_models(pl_module)
+            self._validation_weights_swapped = True
 
     @override
     def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
@@ -239,6 +242,14 @@ class WeightAveraging(Callback):
         """
         if self._average_model is not None:
             self._swap_models(pl_module)
+            self._validation_weights_swapped = False
+
+    @override
+    def on_exception(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", exception: BaseException) -> None:
+        """Restore the training model if validation failed before its epoch-end hook."""
+        if self._validation_weights_swapped:
+            self._swap_models(pl_module)
+            self._validation_weights_swapped = False
 
     @override
     def state_dict(self) -> dict[str, Any]:
