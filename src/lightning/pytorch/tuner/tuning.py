@@ -43,6 +43,7 @@ class Tuner:
         batch_arg_name: str = "batch_size",
         margin: float = 0.05,
         max_val: int = 8192,
+        weights_only: Optional[bool] = None,
     ) -> Optional[int]:
         """Iteratively try to find the largest batch size for a given model that does not give an out of memory (OOM)
         error.
@@ -82,6 +83,9 @@ class Tuner:
             max_val: Maximum batch size limit, defaults to 8192.
                 Helps prevent testing unrealistically large or inefficient batch sizes (e.g., 2**25)
                 when running on CPU or when automatic OOM detection is not available.
+            weights_only: Whether to restrict loading the temporary checkpoint to tensors and primitive types.
+                Set to ``False`` for checkpoints containing trusted custom objects. Defaults to ``None``, which
+                uses the default behavior of :func:`torch.load`.
 
         """
         _check_tuner_configuration(train_dataloaders, val_dataloaders, dataloaders, method)
@@ -99,6 +103,7 @@ class Tuner:
             batch_arg_name=batch_arg_name,
             margin=margin,
             max_val=max_val,
+            weights_only=weights_only,
         )
         # do not continue with the loop in case Tuner is used
         batch_size_finder._early_exit = True

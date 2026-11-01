@@ -34,6 +34,7 @@ def _scale_batch_size(
     batch_arg_name: str = "batch_size",
     margin: float = 0.05,
     max_val: int = 8192,
+    weights_only: Optional[bool] = None,
 ) -> Optional[int]:
     """Iteratively try to find the largest batch size for a given model that does not give an out of memory (OOM)
     error.
@@ -65,6 +66,9 @@ def _scale_batch_size(
         max_val: Maximum batch size limit, defaults to 8192.
             Helps prevent testing unrealistically large or inefficient batch sizes (e.g., 2**25)
             when running on CPU or when automatic OOM detection is not available.
+        weights_only: Whether to restrict loading the temporary checkpoint to tensors and primitive types.
+            Set to ``False`` for checkpoints containing trusted custom objects. Defaults to ``None``, which
+            uses the default behavior of :func:`torch.load`.
 
     """
     assert 0.0 <= margin < 1.0, f"`margin` should be between 0 and 1. Found {margin=}"
@@ -105,7 +109,7 @@ def _scale_batch_size(
         if trainer.progress_bar_callback:
             trainer.progress_bar_callback.enable()
 
-        trainer._checkpoint_connector.restore(ckpt_path)
+        trainer._checkpoint_connector.restore(ckpt_path, weights_only=weights_only)
         trainer.strategy.remove_checkpoint(ckpt_path)
 
     return new_size
