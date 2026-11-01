@@ -131,7 +131,7 @@ pip install -iU https://test.pypi.org/simple/ pytorch-lightning
 <!-- end skipping PyPI description -->
 
 ### PyTorch Lightning example
-Define the training workflow. Here's a toy example ([explore real examples](https://lightning.ai/lightning-ai/studios?view=public&section=featured&query=pytorch+lightning&utm_source=ptl_readme&utm_medium=referral&utm_campaign=ptl_readme)):
+Define the training workflow. Here's a toy example ([explore real examples](https://lightning.ai/environments?view=public&section=featured&query=pytorch+lightning&utm_source=ptl_readme&utm_medium=referral&utm_campaign=ptl_readme)):
 
 ```python
 # main.py
