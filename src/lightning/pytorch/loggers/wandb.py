@@ -279,6 +279,7 @@ class WandbLogger(Logger):
         experiment: WandB experiment object. Automatically set when creating a run.
         checkpoint_name: Name of the model checkpoint artifact being logged.
         add_file_policy: If "mutable", copies file to tempdirectory before upload.
+        join_char: Separator character used to format metric keys before logging.
         \**kwargs: Arguments passed to :func:`wandb.init` like `entity`, `group`, `tags`, etc.
 
     Raises:
@@ -306,6 +307,7 @@ class WandbLogger(Logger):
         prefix: str = "",
         checkpoint_name: Optional[str] = None,
         add_file_policy: Literal["mutable", "immutable"] = "mutable",
+        join_char: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         if not _WANDB_AVAILABLE:
@@ -351,6 +353,7 @@ class WandbLogger(Logger):
         self._name = self._wandb_init.get("name")
         self._id = self._wandb_init.get("id")
         self._checkpoint_name = checkpoint_name
+        self.LOGGER_JOIN_CHAR = join_char or self.LOGGER_JOIN_CHAR
 
     def __getstate__(self) -> dict[str, Any]:
         import wandb
@@ -440,6 +443,8 @@ class WandbLogger(Logger):
         assert rank_zero_only.rank == 0, "experiment tried to log from global_rank != 0"
 
         metrics = _add_prefix(metrics, self._prefix, self.LOGGER_JOIN_CHAR)
+        join_char = getattr(self, "LOGGER_JOIN_CHAR", ".")
+        metrics = {k.replace("/", join_char): v for k, v in metrics.items()}
         if step is not None and not self._wandb_init.get("sync_tensorboard"):
             self.experiment.log(dict(metrics, **{"trainer/global_step": step}))
         else:
