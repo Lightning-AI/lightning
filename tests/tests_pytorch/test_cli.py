@@ -189,6 +189,17 @@ def test_lightning_cli_single_arg_callback():
     assert not isinstance(cli.config_init.trainer, list)
 
 
+def test_lightning_cli_optional_callback_subclass_mode():
+    class MyLightningCLI(LightningCLI):
+        def add_arguments_to_parser(self, parser):
+            parser.add_lightning_class_args(Callback, "optional_callback", subclass_mode=True, required=False)
+
+    with mock.patch("sys.argv", ["any.py"]):
+        cli = MyLightningCLI(BoringModel, run=False)
+
+    assert all(isinstance(callback, Callback) for callback in cli.trainer.callbacks)
+
+
 @pytest.mark.parametrize("run", [False, True])
 def test_lightning_cli_configurable_callbacks(cleandir, run):
     class MyLightningCLI(LightningCLI):

@@ -649,7 +649,11 @@ class LightningCLI:
             kwargs: Any custom trainer arguments.
 
         """
-        extra_callbacks = [self._get(self.config_init, c) for c in self._parser(self.subcommand).callback_keys]
+        extra_callbacks: list[Callback] = []
+        for key in self._parser(self.subcommand).callback_keys:
+            callback = self._get(self.config_init, key)
+            if callback is not None:
+                extra_callbacks.append(callback)
         trainer_config = {**self._get(self.config_init, "trainer", default={}), **kwargs}
         return self._instantiate_trainer(trainer_config, extra_callbacks)
 
