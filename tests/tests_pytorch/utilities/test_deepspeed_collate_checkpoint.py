@@ -12,13 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import sys
+import types
+from unittest import mock
 
+import pytest
 import torch
 
 from lightning.pytorch import Trainer
 from lightning.pytorch.demos.boring_classes import BoringModel
 from lightning.pytorch.strategies import DeepSpeedStrategy
-from lightning.pytorch.utilities.deepspeed import convert_zero_checkpoint_to_fp32_state_dict
+from lightning.pytorch.utilities.deepspeed import (
+    convert_zero_checkpoint_to_fp32_state_dict,
+    ds_checkpoint_dir,
+)
 from tests_pytorch.helpers.runif import RunIf
 
 
@@ -56,3 +63,71 @@ def _assert_checkpoint_equal(model, output_path):
             # moved model to float32 for comparison with single fp32 saved weights
             saved_model_param = saved_model_param.half()
         assert torch.equal(orig_param.cpu(), saved_model_param)
+
+
+def test_ds_checkpoint_dir_tag_and_missing_dir_error(tmp_path):
+    tag_dir = tmp_path / "global_step10"
+    tag_dir.mkdir()
+    assert ds_checkpoint_dir(tmp_path, tag="global_step10") == str(tag_dir)
+
+    missing_tag = "global_step99"
+    expected_dir = os.path.join(tmp_path, missing_tag)
+    with pytest.raises(FileNotFoundError, match=f"Directory '{expected_dir}' doesn't exist"):
+        ds_checkpoint_dir(tmp_path, tag=missing_tag)
+
+
+def test_convert_zero_checkpoint_to_fp32_state_dict_passes_tag(tmp_path, monkeypatch):
+    import lightning.pytorch.utilities.deepspeed as ds_utils
+
+    # Create two tag directories: 'latest' points to step20, while caller explicitly asks for step10.
+    (tmp_path / "latest").write_text("global_step20\n")
+    step10_dir = tmp_path / "global_step10"
+    step20_dir = tmp_path / "global_step20"
+    step10_dir.mkdir()
+    step20_dir.mkdir()
+
+    torch.save({"optimizer_state_dict": {"zero_stage": 2}}, step10_dir / "zero_pp_rank_0_mp_rank_00_optim_states.pt")
+    torch.save(
+        {"epoch": 1, "global_step": 10, "module": {}, "optimizer": {}},
+        step10_dir / "mp_rank_00_model_states.pt",
+    )
+    torch.save({"optimizer_state_dict": {"zero_stage": 2}}, step20_dir / "zero_pp_rank_0_mp_rank_00_optim_states.pt")
+    torch.save(
+        {"epoch": 2, "global_step": 20, "module": {}, "optimizer": {}},
+        step20_dir / "mp_rank_00_model_states.pt",
+    )
+
+    fake_zero_to_fp32 = types.ModuleType("deepspeed.utils.zero_to_fp32")
+    fake_zero_to_fp32.get_fp32_state_dict_from_zero_checkpoint = lambda ckpt_dir, tag: {
+        "_forward_module.layer.weight": torch.tensor([1.0, 2.0])
+    }
+    fake_zero_to_fp32.get_optim_files = lambda ckpt_dir: [
+        os.path.join(ckpt_dir, "zero_pp_rank_0_mp_rank_00_optim_states.pt")
+    ]
+    fake_zero_to_fp32.get_model_state_file = lambda ckpt_dir, zero_stage: os.path.join(
+        ckpt_dir, "mp_rank_00_model_states.pt"
+    )
+
+    fake_ds = types.ModuleType("deepspeed")
+    fake_ds_utils = types.ModuleType("deepspeed.utils")
+    fake_ds_utils.zero_to_fp32 = fake_zero_to_fp32
+    fake_ds.utils = fake_ds_utils
+
+    monkeypatch.setattr(ds_utils, "_DEEPSPEED_AVAILABLE", True)
+    with mock.patch.dict(
+        sys.modules,
+        {
+            "deepspeed": fake_ds,
+            "deepspeed.utils": fake_ds_utils,
+            "deepspeed.utils.zero_to_fp32": fake_zero_to_fp32,
+        },
+    ):
+        output_file = tmp_path / "fp32.pt"
+        client_state = convert_zero_checkpoint_to_fp32_state_dict(
+            tmp_path, output_file, tag="global_step10"
+        )
+
+    assert client_state["epoch"] == 1
+    assert client_state["global_step"] == 10
+    assert torch.equal(client_state["state_dict"]["layer.weight"], torch.tensor([1.0, 2.0]))
+

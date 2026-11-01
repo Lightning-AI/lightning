@@ -38,7 +38,7 @@ def ds_checkpoint_dir(checkpoint_dir: _PATH, tag: str | None = None) -> str:
     directory = os.path.join(checkpoint_dir, tag)
 
     if not os.path.isdir(directory):
-        raise FileNotFoundError(f"Directory '{ds_checkpoint_dir}' doesn't exist")
+        raise FileNotFoundError(f"Directory '{directory}' doesn't exist")
     return directory
 
 
@@ -91,7 +91,7 @@ def convert_zero_checkpoint_to_fp32_state_dict(
         "dp_world_size",
         "mp_world_size",
     ]
-    checkpoint_dir = ds_checkpoint_dir(checkpoint_dir)
+    checkpoint_dir = ds_checkpoint_dir(checkpoint_dir, tag)
     optim_files = get_optim_files(checkpoint_dir)
     optim_state = torch.load(optim_files[0], map_location=CPU_DEVICE, weights_only=False)
     zero_stage = optim_state["optimizer_state_dict"]["zero_stage"]
