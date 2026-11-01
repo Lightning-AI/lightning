@@ -74,8 +74,8 @@ def test_evaluation_loop_sampler_set_epoch_called(tmp_path, use_batch_sampler):
     train_sampler = train_dataloader.batch_sampler.sampler if use_batch_sampler else train_dataloader.sampler
     val_sampler = val_dataloader.batch_sampler.sampler if use_batch_sampler else val_dataloader.sampler
 
-    # One for each epoch
-    assert train_sampler.set_epoch.mock_calls == [call(0), call(1)]
+    # One for setup_data, one for epoch 0 start, one for epoch 1
+    assert train_sampler.set_epoch.mock_calls == [call(0), call(0), call(1)]
     # One for each epoch + sanity check
     assert val_sampler.set_epoch.mock_calls == [call(0), call(0), call(1)]
 
