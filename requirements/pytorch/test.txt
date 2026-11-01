@@ -22,5 +22,6 @@ fastapi  # for `ServableModuleValidator`  # not setting version as re-defined in
 uvicorn  # for `ServableModuleValidator`  # not setting version as re-defined in App
 
 tensorboard >=2.11, <2.21.0  # for `TensorBoardLogger`
+mlflow >=3.0.0, <4.0.0  # for `MLFlowLogger`
 
 huggingface-hub

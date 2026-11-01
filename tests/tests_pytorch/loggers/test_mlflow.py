@@ -317,16 +317,17 @@ def test_mlflow_logger_no_synchronous_support(mlflow_mock, tmp_path):
 
 @mock.patch("lightning.pytorch.loggers.mlflow._get_resolve_tags", Mock())
 def test_mlflow_logger_with_long_param_value(mlflow_mock, tmp_path):
-    """Test that long parameter values are truncated to 250 characters."""
+    """Test that long parameter values are truncated using MLflow's MAX_PARAM_VAL_LENGTH."""
+    from mlflow.utils.validation import MAX_PARAM_VAL_LENGTH
 
     def _check_value_length(value, *args, **kwargs):
-        assert len(value) <= 250
+        assert len(value) <= MAX_PARAM_VAL_LENGTH
 
     mlflow_mock.entities.Param.side_effect = _check_value_length
 
     logger = MLFlowLogger("test", save_dir=str(tmp_path))
 
-    params = {"test": "test_param" * 50}
+    params = {"test": "test_param" * 1000}
     logger.log_hyperparams(params)
 
     # assert_called_once_with() won't properly check the parameter value.

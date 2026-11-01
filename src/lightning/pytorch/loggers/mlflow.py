@@ -233,10 +233,9 @@ class MLFlowLogger(Logger):
         params = _flatten_dict(params)
 
         from mlflow.entities import Param
+        from mlflow.utils.validation import MAX_PARAM_VAL_LENGTH
 
-        # Truncate parameter values to 250 characters.
-        # TODO: MLflow 1.28 allows up to 500 characters: https://github.com/mlflow/mlflow/releases/tag/v1.28.0
-        params_list = [Param(key=k, value=str(v)[:250]) for k, v in params.items()]
+        params_list = [Param(key=k, value=str(v)[:MAX_PARAM_VAL_LENGTH]) for k, v in params.items()]
 
         # Log in chunks of 100 parameters (the maximum allowed by MLflow).
         for idx in range(0, len(params_list), 100):
