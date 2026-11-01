@@ -93,6 +93,7 @@ class ThroughputMonitor(Callback):
 
     @override
     def setup(self, trainer: "Trainer", pl_module: "LightningModule", stage: str) -> None:
+        self._module_has_flops = None
         dtype = _plugin_to_compute_dtype(trainer.precision_plugin)
         self.available_flops = get_available_flops(trainer.strategy.root_device, dtype)
 
