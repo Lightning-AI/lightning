@@ -129,7 +129,8 @@ class GradientAccumulationScheduler(Callback):
                 f"The `{type(trainer.strategy).__name__}` does not support `accumulate_grad_batches` changing"
                 " between epochs."
             )
-        if trainer.accumulate_grad_batches != 1:
+        previous_assignment = getattr(trainer, "_gradient_accumulation_scheduler_assignment", None)
+        if trainer.accumulate_grad_batches != 1 and previous_assignment != (self, trainer.accumulate_grad_batches):
             raise ValueError(
                 "You have set `accumulate_grad_batches` and are using the `GradientAccumulationScheduler`"
                 " callback. Either remove `accumulate_grad_batches` from the Trainer or remove the callback."
@@ -138,3 +139,6 @@ class GradientAccumulationScheduler(Callback):
     @override
     def on_train_epoch_start(self, trainer: "pl.Trainer", *_: Any) -> None:
         trainer.accumulate_grad_batches = self.get_accumulate_grad_batches(trainer.current_epoch)
+
+        # Keep provenance on the Trainer so reusing or serializing the callback does not retain a Trainer.
+        trainer._gradient_accumulation_scheduler_assignment = (self, trainer.accumulate_grad_batches)
