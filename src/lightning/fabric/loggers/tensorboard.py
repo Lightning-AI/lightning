@@ -205,6 +205,17 @@ class TensorBoardLogger(Logger):
         for k, v in metrics.items():
             if isinstance(v, Tensor):
                 v = v.item()
+            elif hasattr(v, "item") and callable(getattr(v, "item")):
+                # Handle numpy arrays and other array-like objects with .item() method
+                try:
+                    v = v.item()
+                except (TypeError, ValueError):
+                    # Fallback for numpy 2.4.0+ where .item() on 0-d arrays raises TypeError
+                    # Convert to native Python scalar using type conversion
+                    if hasattr(v, "ndim") and v.ndim == 0:
+                        v = v.dtype.type(v)  # Use numpy's scalar type constructor
+                    else:
+                        v = float(v)  # Fallback to float conversion
 
             if isinstance(v, dict):
                 self.experiment.add_scalars(k, v, step)
