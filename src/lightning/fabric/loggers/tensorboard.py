@@ -204,7 +204,12 @@ class TensorBoardLogger(Logger):
 
         for k, v in metrics.items():
             if isinstance(v, Tensor):
-                v = v.item()
+                try:
+                    v = v.item()
+                except TypeError:
+                    # NumPy 2.4.0+ raises TypeError when converting 0-dimensional arrays to scalars
+                    # Fallback to converting via numpy scalar extraction
+                    v = float(v.detach().cpu().numpy())
 
             if isinstance(v, dict):
                 self.experiment.add_scalars(k, v, step)

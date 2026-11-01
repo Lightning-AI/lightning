@@ -111,6 +111,29 @@ def test_tensorboard_log_metrics(tmp_path, step_idx):
     logger.log_metrics(metrics, step_idx)
 
 
+def test_tensorboard_log_metrics_numpy_24_compatibility(tmp_path):
+    """Test compatibility with NumPy 2.4.0+ TypeError when converting 0-dimensional arrays to scalars."""
+    logger = TensorBoardLogger(tmp_path)
+
+    # Create 0-dimensional tensors that could trigger the NumPy 2.4.0 TypeError
+    zero_dim_float = torch.tensor(3.14)
+    zero_dim_int = torch.tensor(42)
+
+    # Create tensors from numpy arrays (most likely to trigger the issue)
+    from_numpy_float = torch.from_numpy(np.array(2.71))
+    from_numpy_int = torch.from_numpy(np.array(7))
+
+    metrics = {
+        "zero_dim_float": zero_dim_float,
+        "zero_dim_int": zero_dim_int,
+        "from_numpy_float": from_numpy_float,
+        "from_numpy_int": from_numpy_int,
+    }
+
+    # This should not raise a TypeError even with NumPy 2.4.0+
+    logger.log_metrics(metrics, step=1)
+
+
 def test_tensorboard_log_hyperparams(tmp_path):
     logger = TensorBoardLogger(tmp_path)
     hparams = {
