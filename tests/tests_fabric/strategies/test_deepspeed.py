@@ -16,6 +16,7 @@ from re import escape
 from unittest import mock
 from unittest.mock import ANY, Mock
 
+import numpy as np
 import pytest
 import torch
 from torch.optim import Optimizer
@@ -206,6 +207,24 @@ def test_deepspeed_save_checkpoint_client_state_separation(tmp_path):
     # the client_state should not contain any deepspeed engine or deepspeed optimizer
     model.save_checkpoint.assert_called_with(
         tmp_path, client_state={"test": "data"}, tag="checkpoint", exclude_frozen_parameters=False
+    )
+
+    # State entries whose `__eq__` returns a multi-element array (e.g. numpy arrays) must not raise ValueError
+    class _ArrayEqObject:
+        def __eq__(self, other):
+            return np.array([False, False])
+
+    array_val = np.arange(4)
+    custom_val = _ArrayEqObject()
+    strategy.save_checkpoint(
+        path=tmp_path,
+        state={"model": model, "optimizer": optimizer, "array": array_val, "custom": custom_val},
+    )
+    model.save_checkpoint.assert_called_with(
+        tmp_path,
+        client_state={"array": array_val, "custom": custom_val},
+        tag="checkpoint",
+        exclude_frozen_parameters=False,
     )
 
 
