@@ -30,6 +30,9 @@ class AsyncCheckpointIO(_WrappingCheckpointIO):
 
     .. warning::  This is an :ref:`experimental <versioning:Experimental API>` feature.
 
+    Tensor values are copied to CPU on the caller thread before the write is queued. Meta tensors remain on meta.
+    This captures a point-in-time snapshot without retaining additional accelerator copies while the writer is busy.
+
     Args:
         checkpoint_io: A checkpoint IO plugin that is used as the basis for async checkpointing.
 
@@ -95,6 +98,5 @@ class AsyncCheckpointIO(_WrappingCheckpointIO):
 
 # snapshot the checkpoint payload on the caller thread to avoid races with parameter mutation
 def _clone_tensor(t: torch.Tensor) -> torch.Tensor:
-    """Clones a tensor on the caller thread."""
-    # detach to avoid autograd history and clone to take a point-in-time copy
-    return t.detach().clone()
+    """Makes a detached CPU snapshot, keeping data-less meta tensors on meta."""
+    return t.detach().to(device="meta" if t.is_meta else "cpu", copy=True)
