@@ -112,11 +112,11 @@ this generate a table like:
 
 .. code-block:: text
 
-      | Name  | Type        | Params | Mode
-    -------------------------------------------
-    0 | net   | Sequential  | 132 K  | train
-    1 | net.0 | Linear      | 131 K  | train
-    2 | net.1 | BatchNorm1d | 1.0 K  | train
+      | Name  | Type        | Params | Mode  | FLOPs
+    ------------------------------------------------------
+    0 | net   | Sequential  | 132 K  | train | 0
+    1 | net.0 | Linear      | 131 K  | train | 0
+    2 | net.1 | BatchNorm1d | 1.0 K  | train | 0
 
 To add the child modules to the summary add a :class:`~lightning.pytorch.callbacks.model_summary.ModelSummary`:
 
@@ -154,16 +154,16 @@ Another debugging tool is to  display the intermediate input- and output sizes o
 
     class LitModel(LightningModule):
         def __init__(self, *args, **kwargs):
-            self.example_input_array = torch.Tensor(32, 1, 28, 28)
+            self.example_input_array = torch.zeros(10, 256)
 
 With the input array, the summary table will include the input and output layer dimensions:
 
 .. code-block:: text
 
-      | Name  | Type        | Params | Mode  | In sizes  | Out sizes
-    ----------------------------------------------------------------------
-    0 | net   | Sequential  | 132 K  | train | [10, 256] | [10, 512]
-    1 | net.0 | Linear      | 131 K  | train | [10, 256] | [10, 512]
-    2 | net.1 | BatchNorm1d | 1.0 K  | train | [10, 512] | [10, 512]
+      | Name  | Type        | Params | Mode  | FLOPs | In sizes  | Out sizes
+    ------------------------------------------------------------------------------
+    0 | net   | Sequential  | 132 K  | train | 2.6 M | [10, 256] | [10, 512]
+    1 | net.0 | Linear      | 131 K  | train | 2.6 M | [10, 256] | [10, 512]
+    2 | net.1 | BatchNorm1d | 1.0 K  | train | 0     | [10, 512] | [10, 512]
 
 when you call ``.fit()`` on the Trainer. This can help you find bugs in the composition of your layers.
