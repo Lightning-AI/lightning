@@ -199,3 +199,27 @@ def test_comet_metrics_safe(comet_mock, tmp_path, monkeypatch):
     metrics = {"tensor": tensor([[1.0, 0.0], [0.0, 1.0]], requires_grad=True), "epoch": 1}
     logger.log_metrics(metrics)
     assert metrics["tensor"].requires_grad
+
+
+@mock.patch.dict(os.environ, {})
+def test_comet_flush_every_checkpoint(comet_mock):
+    """Test that the CometLogger is flushing Comet experiment after each checkpoint."""
+
+    logger = CometLogger(flush_every="checkpoint")
+    assert logger._experiment is not None
+
+    logger.after_save_checkpoint(Mock())
+
+    logger._experiment.flush.assert_called_once()
+
+
+@mock.patch.dict(os.environ, {})
+def test_comet_flush_every_not_called(comet_mock):
+    """Test that the CometLogger don't call Comet experiment flush if not requested after each checkpoint."""
+
+    logger = CometLogger()
+    assert logger._experiment is not None
+
+    logger.after_save_checkpoint(Mock())
+
+    logger._experiment.flush.assert_not_called()

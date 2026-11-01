@@ -29,6 +29,7 @@ from typing_extensions import override
 
 from lightning.fabric.utilities.logger import _convert_params
 from lightning.fabric.utilities.rank_zero import _get_rank
+from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers.logger import Logger, rank_zero_experiment
 from lightning.pytorch.utilities.rank_zero import rank_zero_only
 
@@ -187,6 +188,8 @@ class CometLogger(Logger):
             locally in an offline experiment. Default is ``True``.
         prefix: The prefix to add to names of the logged metrics.
             example: prefix=`exp1`, then metric name will be logged as `exp1_metric_name`
+        flush_every: Controls whether the Comet experiment flushes logs to the Comet server after each checkpoint.
+            If no value is provided, flushing will not occur.
         **kwargs: Additional arguments like `name`, `log_code`, `offline_directory` etc. used by
             :class:`CometExperiment` can be passed as keyword arguments in this logger.
 
@@ -206,6 +209,7 @@ class CometLogger(Logger):
         mode: Optional[Literal["get_or_create", "get", "create"]] = None,
         online: Optional[bool] = None,
         prefix: Optional[str] = None,
+        flush_every: Optional[Literal["checkpoint"]] = None,
         **kwargs: Any,
     ):
         if not _COMET_AVAILABLE:
@@ -263,6 +267,7 @@ class CometLogger(Logger):
         self._experiment_key: Optional[str] = experiment_key
         self._prefix: Optional[str] = prefix
         self._kwargs: dict[str, Any] = kwargs
+        self._flush_every: Optional[Literal["checkpoint"]] = flush_every
 
         # needs to be set before the first `comet_ml` import
         # because comet_ml imported after another machine learning libraries (Torch)
@@ -271,8 +276,7 @@ class CometLogger(Logger):
         import comet_ml
 
         config_kwargs = self._kwargs.copy()
-        if online is False:
-            config_kwargs["disabled"] = True
+
         self._comet_config = comet_ml.ExperimentConfig(**config_kwargs)
 
         # create real experiment only on main node/process (when strategy=auto/ddp)
@@ -419,3 +423,8 @@ class CometLogger(Logger):
                 graph=model,
                 framework=FRAMEWORK_NAME,
             )
+
+    @override
+    def after_save_checkpoint(self, checkpoint_callback: ModelCheckpoint) -> None:
+        if self._experiment is not None and self._flush_every == "checkpoint":
+            self._experiment.flush()
