@@ -253,6 +253,37 @@ class LightningDataModule(DataHooks, HyperparametersMixin):
         )
         return cast(Self, loaded)
 
+    def __len__(self) -> int:
+        """Return the number of samples in the training dataset.
+
+        Override this method in your subclass to return the total number of
+        training samples. By default, this method attempts to determine the
+        length from the training dataloader's dataset.
+
+        Returns:
+            The number of samples in the training dataset.
+
+        Raises:
+            TypeError: If ``train_dataloader`` is not configured or the dataset
+                does not implement ``__len__``.
+
+        Example::
+
+            class MyDataModule(LightningDataModule):
+                def __len__(self) -> int:
+                    return len(self.train_dataset)
+
+        """
+        try:
+            loader = self.train_dataloader()
+            dataset = loader.dataset
+            return len(dataset)  # type: ignore[arg-type]
+        except Exception as ex:
+            raise TypeError(
+                f"'{type(self).__name__}' object has no len(). "
+                "Override `__len__` in your LightningDataModule subclass to return the number of training samples."
+            ) from ex
+
     def __str__(self) -> str:
         """Return a string representation of the datasets that are set up.
 
