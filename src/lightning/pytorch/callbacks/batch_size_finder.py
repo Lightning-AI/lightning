@@ -68,6 +68,9 @@ class BatchSizeFinder(Callback):
         max_val: Maximum batch size limit, defaults to 8192.
             Helps prevent testing unrealistically large or inefficient batch sizes (e.g., 2**25)
             when running on CPU or when automatic OOM detection is not available.
+        weights_only: Whether to restrict loading the temporary checkpoint to tensors and primitive types.
+            Set to ``False`` for checkpoints containing trusted custom objects. Defaults to ``None``, which
+            uses the default behavior of :func:`torch.load`.
 
     Example::
 
@@ -126,6 +129,7 @@ class BatchSizeFinder(Callback):
         batch_arg_name: str = "batch_size",
         margin: float = 0.05,
         max_val: int = 8192,
+        weights_only: Optional[bool] = None,
     ) -> None:
         mode = mode.lower()
         if mode not in self.SUPPORTED_MODES:
@@ -141,6 +145,7 @@ class BatchSizeFinder(Callback):
         self._batch_arg_name = batch_arg_name
         self._margin = margin
         self._max_val = max_val
+        self._weights_only = weights_only
         self._early_exit = False
 
     @override
@@ -194,6 +199,7 @@ class BatchSizeFinder(Callback):
             self._batch_arg_name,
             self._margin,
             self._max_val,
+            weights_only=self._weights_only,
         )
 
         self.optimal_batch_size = new_size

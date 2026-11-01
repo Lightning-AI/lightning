@@ -15,6 +15,8 @@ import glob
 import logging
 import math
 import os
+import pickle
+from argparse import Namespace
 from copy import deepcopy
 from unittest.mock import patch
 
@@ -58,6 +60,68 @@ class BatchSizeModel(BoringModel):
 
     def predict_dataloader(self):
         return DataLoader(RandomDataset(32, 64), batch_size=getattr(self, "batch_size", 1))
+
+
+@pytest.mark.parametrize(
+    ("entrypoint", "method"),
+    [("tuner", "fit"), ("tuner", "validate"), ("tuner", "test"), ("tuner", "predict"), ("callback", "fit")],
+)
+@pytest.mark.parametrize("weights_only", [None, True, False])
+def test_scale_batch_size_weights_only(tmp_path, entrypoint, method, weights_only):
+    class Model(BatchSizeModel):
+        def on_save_checkpoint(self, checkpoint):
+            checkpoint["custom_state"] = Namespace(value=42)
+
+        def on_load_checkpoint(self, checkpoint):
+            self.restored_value = checkpoint["custom_state"].value
+
+    model = Model(batch_size=2)
+    original_state = deepcopy(model.state_dict())
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        accelerator="cpu",
+        devices=1,
+        max_epochs=1,
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    kwargs = {"steps_per_trial": 1, "max_trials": 1}
+    if weights_only is not None:
+        kwargs["weights_only"] = weights_only
+
+    if entrypoint == "callback":
+
+        class RecordingBatchSizeFinder(BatchSizeFinder):
+            def scale_batch_size(self, trainer, pl_module):
+                super().scale_batch_size(trainer, pl_module)
+                self.restored_state = deepcopy(pl_module.state_dict())
+
+        callback = RecordingBatchSizeFinder(**kwargs)
+        trainer.callbacks.append(callback)
+
+    if weights_only is not False:
+        with pytest.raises(pickle.UnpicklingError, match="Weights only load failed"):
+            if entrypoint == "tuner":
+                Tuner(trainer).scale_batch_size(model, method=method, **kwargs)
+            else:
+                trainer.fit(model)
+        return
+
+    if entrypoint == "tuner":
+        batch_size = Tuner(trainer).scale_batch_size(model, method=method, **kwargs)
+        restored_state = model.state_dict()
+    else:
+        trainer.fit(model)
+        batch_size = callback.optimal_batch_size
+        restored_state = callback.restored_state
+
+    assert batch_size == model.batch_size
+    assert model.restored_value == 42
+    for name, value in restored_state.items():
+        torch.testing.assert_close(value, original_state[name], rtol=0, atol=0)
+    assert not list(tmp_path.glob(".scale_batch_size_*.ckpt"))
 
 
 @pytest.mark.parametrize(("model_bs", "dm_bs"), [(2, -1), (2, 2), (2, None), (None, 2), (16, 16)])
