@@ -44,11 +44,13 @@ class SLURMEnvironment(ClusterEnvironment):
 
     """
 
+    DEFAULT_REQUEUE_SIGNAL = signal.SIGUSR1 if not _IS_WINDOWS else None
+
     def __init__(self, auto_requeue: bool = True, requeue_signal: Optional[signal.Signals] = None) -> None:
         super().__init__()
         self.auto_requeue = auto_requeue
-        if requeue_signal is None and not _IS_WINDOWS:
-            requeue_signal = signal.SIGUSR1
+        if requeue_signal is None:
+            requeue_signal = self.DEFAULT_REQUEUE_SIGNAL
         self.requeue_signal = requeue_signal
         self._validate_srun_used()
         self._validate_srun_variables()
