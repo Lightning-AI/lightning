@@ -36,6 +36,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- Fixed reused `WeightAveraging` callbacks skipping updates to a fresh fit's average ([#22105](https://github.com/Lightning-AI/pytorch-lightning/pull/22105))
+
 - Fixed `LightningCLI` emitting `jsonargparse` deprecation warnings ([#21900](https://github.com/Lightning-AI/pytorch-lightning/issues/21900))
 
 - Fixed `RichProgressBar` showing a nonsensical negative epoch total (e.g. `Epoch 5/-2`) when `Trainer(max_epochs=-1)` (unlimited epochs) is used and training stops via another condition ([#21925](https://github.com/Lightning-AI/pytorch-lightning/issues/21925))

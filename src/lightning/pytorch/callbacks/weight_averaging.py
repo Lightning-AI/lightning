@@ -143,6 +143,8 @@ class WeightAveraging(Callback):
 
         """
         if stage == "fit":
+            self._latest_update_step = 0
+            self._latest_update_epoch = -1
             device = self._device or pl_module.device
 
             # If the configure_model hook is overridden, call it to create the layers before constructing the
