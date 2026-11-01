@@ -83,14 +83,18 @@ class AsyncCheckpointIO(_WrappingCheckpointIO):
 
     @override
     def teardown(self) -> None:
-        """This method is called to close the threads."""
+        """Wait for asynchronous saves, then close the wrapped checkpoint IO."""
         if self._executor is not None:
             self._executor.shutdown(wait=True)
             self._executor = None
 
-        # if an error was raised anytime in any of the `executor.submit` calls
-        if self._error:
-            raise self._error
+        try:
+            if self.checkpoint_io is not None:
+                self.checkpoint_io.teardown()
+        finally:
+            # Preserve the background save failure if backend cleanup also fails.
+            if self._error:
+                raise self._error
 
 
 # snapshot the checkpoint payload on the caller thread to avoid races with parameter mutation
