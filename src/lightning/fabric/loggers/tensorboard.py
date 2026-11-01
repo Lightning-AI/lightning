@@ -205,6 +205,29 @@ class TensorBoardLogger(Logger):
         for k, v in metrics.items():
             if isinstance(v, Tensor):
                 v = v.item()
+            elif hasattr(v, "ndim") and hasattr(v, "item"):
+                # Handle numpy arrays and other array-like objects
+                if v.ndim == 0:
+                    # For 0-dimensional arrays, handle numpy >= 2.4.0 TypeError
+                    try:
+                        v = v.item()
+                    except TypeError:
+                        # numpy >= 2.4.0 raises TypeError for 0-dim arrays
+                        # Fall back to scalar conversion
+                        v = float(v)
+                elif v.ndim == 1 and v.size == 1:
+                    # Handle 1-dimensional arrays with single element
+                    try:
+                        v = v.item()
+                    except TypeError:
+                        # numpy >= 2.4.0 fallback
+                        v = float(v.flat[0])
+                else:
+                    # Multi-dimensional arrays cannot be logged as scalars
+                    raise ValueError(
+                        f"Cannot log multi-dimensional array with shape {v.shape} as scalar. "
+                        f"Try using a scalar value instead."
+                    )
 
             if isinstance(v, dict):
                 self.experiment.add_scalars(k, v, step)
