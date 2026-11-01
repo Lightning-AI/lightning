@@ -94,6 +94,7 @@ class _TrainingEpochLoop(loops._Loop):
         self._batches_that_stepped: int = 0
         self._restart_stage = RestartStage.NONE
         self._skip_next_val = False
+        self._last_val_check_step: Optional[int] = None
 
     @property
     def total_batch_idx(self) -> int:
@@ -394,6 +395,7 @@ class _TrainingEpochLoop(loops._Loop):
             self._skip_next_val = False
 
         if should_check_val:
+            self._last_val_check_step = self.global_step
             # this needs to be set so the correct `trainer._active_loop` is picked
             self.trainer.validating = True
             # save and reset this state in case validation runs inside training loop (val_check_interval<1.0)
@@ -551,6 +553,16 @@ class _TrainingEpochLoop(loops._Loop):
         is_val_check_batch = is_last_batch
         if isinstance(self.trainer.limit_train_batches, int) and is_infinite_dataset:
             is_val_check_batch = (self.batch_idx + 1) % self.trainer.limit_train_batches == 0
+        elif self.trainer.val_check_interval_unit == "step":
+            # count optimizer steps instead of batches, so a partial accumulation window at the end of an epoch
+            # (which still steps the optimizer) doesn't shift validation relative to `global_step`. With manual
+            # optimization a batch may not step at all, so don't validate twice at the same step
+            assert self.trainer.val_check_batch is not None
+            is_val_check_batch = (
+                not self._should_accumulate()
+                and self.global_step % self.trainer.val_check_batch == 0
+                and self.global_step != self._last_val_check_step
+            )
         elif self.trainer.val_check_batch != float("inf"):
             # if we got here, we’re in batch-based mode, so this can’t be None
             assert self.trainer.val_check_batch is not None

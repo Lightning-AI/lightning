@@ -54,6 +54,7 @@ class _DataConnector:
         val_check_interval: Optional[Union[int, float, str, timedelta, dict]],
         reload_dataloaders_every_n_epochs: int,
         check_val_every_n_epoch: Optional[int],
+        val_check_interval_unit: str = "batch",
     ) -> None:
         self.trainer.datamodule = None
 
@@ -68,7 +69,20 @@ class _DataConnector:
                 "datetime.timedelta, or dict kwargs for timedelta) when `check_val_every_n_epoch=None`."
             )
 
+        if val_check_interval_unit not in ("batch", "step"):
+            raise MisconfigurationException(
+                f"`val_check_interval_unit` should be 'batch' or 'step', found {val_check_interval_unit!r}."
+            )
+
+        is_int_interval = isinstance(val_check_interval, int) and not isinstance(val_check_interval, bool)
+        if val_check_interval_unit == "step" and (check_val_every_n_epoch is not None or not is_int_interval):
+            raise MisconfigurationException(
+                "`val_check_interval_unit='step'` requires an integer `val_check_interval` and"
+                " `check_val_every_n_epoch=None`."
+            )
+
         self.trainer.check_val_every_n_epoch = check_val_every_n_epoch
+        self.trainer.val_check_interval_unit = val_check_interval_unit
 
         if not isinstance(reload_dataloaders_every_n_epochs, int) or (reload_dataloaders_every_n_epochs < 0):
             raise MisconfigurationException(
