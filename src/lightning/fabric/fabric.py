@@ -701,8 +701,22 @@ class Fabric:
             A tensor of the same shape as the input with values reduced pointwise across processes. The same is
             applied to tensors in a collection if a collection is given as input.
 
+        Raises:
+            RuntimeError: If a CPU tensor is passed while running on a non-CPU device. Move the tensor to
+                ``fabric.device`` before calling ``all_reduce``.
+
         """
         self._validate_launched()
+        if self.device.type != "cpu":
+
+            def _validate_tensor_device(tensor: Tensor) -> None:
+                if tensor.device.type == "cpu":
+                    raise RuntimeError(
+                        "`Fabric.all_reduce` received a CPU tensor while running on a non-CPU device. Move the tensor"
+                        " to fabric.device before calling all_reduce."
+                    )
+
+            apply_to_collection(data, Tensor, _validate_tensor_device)
         group = group if group is not None else torch.distributed.group.WORLD
         data = convert_to_tensors(data, device=self.device)
         return apply_to_collection(data, Tensor, self._strategy.all_reduce, group=group, reduce_op=reduce_op)

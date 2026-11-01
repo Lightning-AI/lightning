@@ -1214,6 +1214,17 @@ def test_all_reduce():
     fabric._strategy.all_reduce.assert_has_calls([call(torch.tensor(4), **defaults), call(torch.tensor(5), **defaults)])
 
 
+def test_all_reduce_raises_for_cpu_tensor_on_non_cpu_root_device():
+    """Test that `Fabric.all_reduce()` raises an error when a CPU tensor is passed while the root device is not CPU."""
+    fabric = Fabric()
+    fabric._strategy = Mock(root_device=torch.device("cuda", 0))
+    fabric._launched = True
+
+    tensor_cpu = torch.tensor(1.0, device="cpu")
+    with pytest.raises(RuntimeError, match=r"Move the tensor to fabric.device before calling all_reduce"):
+        fabric.all_reduce(tensor_cpu)
+
+
 def test_rank_zero_first(monkeypatch):
     """Test that rank 0 completes first before all other processes can execute under `.rank_zero_first()`."""
 

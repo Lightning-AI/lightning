@@ -60,6 +60,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- Fixed an unintuitive behavior in `Fabric.all_reduce` where passing a CPU tensor on a non-CPU device resulted in a silent backend copy instead of updating the original tensor, by explicitly raising a `RuntimeError` ([#21573](https://github.com/Lightning-AI/pytorch-lightning/pull/21573))
 - Fixed FSDP mixed precision (`bf16-mixed`, `16-mixed`) initializing model parameters in half precision instead of fp32 ([#21586](https://github.com/Lightning-AI/pytorch-lightning/pull/21586))
 - Fixed `device_mesh` type hint in `FSDPStrategy` to accept a 2-element tuple via the CLI ([#21581](https://github.com/Lightning-AI/pytorch-lightning/pull/21581))
 
