@@ -126,28 +126,28 @@ def _gather_all_tensors(result: Tensor, group: Optional[Any] = None) -> list[Ten
     if result.ndim == 0:
         return _simple_gather_all_tensors(result, group, world_size)
 
-    # 1. Gather sizes of all tensors
+    # 1. Gather sizes of all tensors in a single device-to-host transfer
     local_size = torch.tensor(result.shape, device=result.device)
     local_sizes = [torch.zeros_like(local_size) for _ in range(world_size)]
     torch.distributed.all_gather(local_sizes, local_size, group=group)
-    max_size = torch.stack(local_sizes).max(dim=0).values
-    all_sizes_equal = all(all(ls == max_size) for ls in local_sizes)
+    shapes: list[list[int]] = torch.stack(local_sizes).cpu().tolist()
+    all_sizes_equal = all(s == shapes[0] for s in shapes)
 
     # 2. If shapes are all the same, then do a simple gather:
     if all_sizes_equal:
         return _simple_gather_all_tensors(result, group, world_size)
 
     # 3. If not, we need to pad each local tensor to maximum size, gather and then truncate
+    max_size = [max(dim_sizes) for dim_sizes in zip(*shapes)]
     pad_dims = []
-    pad_by = (max_size - local_size).detach().cpu()
-    for val in reversed(pad_by):
+    for max_dim, cur_dim in zip(reversed(max_size), reversed(result.shape)):
         pad_dims.append(0)
-        pad_dims.append(val.item())
+        pad_dims.append(max_dim - cur_dim)
     result_padded = F.pad(result, pad_dims)
     gathered_result = [torch.zeros_like(result_padded) for _ in range(world_size)]
     torch.distributed.all_gather(gathered_result, result_padded, group)
-    for idx, item_size in enumerate(local_sizes):
-        slice_param = [slice(dim_size) for dim_size in item_size]
+    for idx, item_size in enumerate(shapes):
+        slice_param = tuple(slice(dim_size) for dim_size in item_size)
         gathered_result[idx] = gathered_result[idx][slice_param]
     return gathered_result
 

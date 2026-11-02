@@ -128,6 +128,55 @@ def test_collective_operations(devices, process):
     spawn_launch(process, devices)
 
 
+def test_gather_all_tensors_avoids_per_element_tensor_sync_and_uses_tuple_slices(monkeypatch):
+    rank_shapes = [(2, 4), (3, 1), (1, 5)]
+    rank_tensors = [torch.arange(r * c, dtype=torch.float32).reshape(r, c) for r, c in rank_shapes]
+
+    def fake_all_gather(tensor_list, tensor, group=None):
+        if tensor.ndim == 1 and tensor.numel() == 2:
+            for idx, shape in enumerate(rank_shapes):
+                tensor_list[idx].copy_(torch.tensor(shape, dtype=tensor.dtype))
+        else:
+            for idx, rank_tensor in enumerate(rank_tensors):
+                padded = torch.nn.functional.pad(
+                    rank_tensor, (0, 5 - rank_tensor.shape[1], 0, 3 - rank_tensor.shape[0])
+                )
+                tensor_list[idx].copy_(padded)
+
+    monkeypatch.setattr(torch.distributed, "get_world_size", lambda group=None: len(rank_shapes))
+    monkeypatch.setattr(torch.distributed, "barrier", lambda group=None: None)
+    monkeypatch.setattr(torch.distributed, "all_gather", fake_all_gather)
+
+    def forbid_scalar_sync(self):
+        raise AssertionError("Per-element Tensor.__bool__ or Tensor.__index__ sync should not be called")
+
+    monkeypatch.setattr(torch.Tensor, "__bool__", forbid_scalar_sync)
+    monkeypatch.setattr(torch.Tensor, "__index__", forbid_scalar_sync)
+
+    gathered = _gather_all_tensors(rank_tensors[0])
+    assert [t.shape for t in gathered] == rank_shapes
+    for actual, expected in zip(gathered, rank_tensors):
+        assert torch.equal(actual, expected)
+
+    # Also verify the equal-shapes fast path avoids per-element Tensor.__bool__ syncs
+    equal_shapes = [(2, 4), (2, 4), (2, 4)]
+    equal_tensors = [torch.full((2, 4), float(idx)) for idx in range(len(equal_shapes))]
+
+    def fake_all_gather_equal(tensor_list, tensor, group=None):
+        if tensor.ndim == 1 and tensor.numel() == 2:
+            for idx, shape in enumerate(equal_shapes):
+                tensor_list[idx].copy_(torch.tensor(shape, dtype=tensor.dtype))
+        else:
+            for idx, rank_tensor in enumerate(equal_tensors):
+                tensor_list[idx].copy_(rank_tensor)
+
+    monkeypatch.setattr(torch.distributed, "all_gather", fake_all_gather_equal)
+    gathered_equal = _gather_all_tensors(equal_tensors[0])
+    assert [t.shape for t in gathered_equal] == equal_shapes
+    for actual, expected in zip(gathered_equal, equal_tensors):
+        assert torch.equal(actual, expected)
+
+
 @pytest.mark.skipif(
     RequirementCache("numpy>=2.0"),
     reason="torch.distributed not compatible with numpy>=2.0",
