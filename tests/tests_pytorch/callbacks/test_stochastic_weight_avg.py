@@ -419,3 +419,41 @@ def test_swa_with_infinite_epochs_and_batchnorm(tmp_path):
 
 def _backward_patch(trainer: Trainer) -> AbstractContextManager:
     return mock.patch.object(Strategy, "backward", wraps=trainer.strategy.backward)
+
+
+def test_swa_update_parameters_checks_n_averaged_once():
+    """Verify update_parameters evaluates `n_averaged == 0` once per call instead of once per parameter tensor."""
+
+    class _CountingScalarTensor(torch.Tensor):
+        bool_calls = 0
+
+        def __bool__(self):
+            type(self).bool_calls += 1
+            return super().__bool__()
+
+    avg_model = BoringModel()
+    model = BoringModel()
+    for p in avg_model.parameters():
+        p.data.fill_(1.0)
+    for p in model.parameters():
+        p.data.fill_(3.0)
+
+    num_params = sum(1 for _ in model.parameters())
+    assert num_params > 1
+
+    n_averaged = torch.tensor(0, dtype=torch.long).as_subclass(_CountingScalarTensor)
+    _CountingScalarTensor.bool_calls = 0
+    StochasticWeightAveraging.update_parameters(avg_model, model, n_averaged, StochasticWeightAveraging.avg_fn)
+    assert _CountingScalarTensor.bool_calls == 1
+    assert int(n_averaged) == 1
+    for p in avg_model.parameters():
+        assert torch.allclose(p, torch.full_like(p, 3.0))
+
+    for p in model.parameters():
+        p.data.fill_(5.0)
+    _CountingScalarTensor.bool_calls = 0
+    StochasticWeightAveraging.update_parameters(avg_model, model, n_averaged, StochasticWeightAveraging.avg_fn)
+    assert _CountingScalarTensor.bool_calls == 1
+    assert int(n_averaged) == 2
+    for p in avg_model.parameters():
+        assert torch.allclose(p, torch.full_like(p, 4.0))

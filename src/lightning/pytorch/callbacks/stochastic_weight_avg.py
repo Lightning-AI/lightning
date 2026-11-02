@@ -324,11 +324,20 @@ class StochasticWeightAveraging(Callback):
         average_model: "pl.LightningModule", model: "pl.LightningModule", n_averaged: Tensor, avg_fn: _AVG_FN
     ) -> None:
         """Adapted from https://github.com/pytorch/pytorch/blob/v1.7.1/torch/optim/swa_utils.py#L104-L112."""
+        is_first = bool(n_averaged == 0)
+        n_averaged_by_device: dict[torch.device, Tensor] = {n_averaged.device: n_averaged}
         for p_swa, p_model in zip(average_model.parameters(), model.parameters()):
             device = p_swa.device
             p_swa_ = p_swa.detach()
             p_model_ = p_model.detach().to(device)
-            src = p_model_ if n_averaged == 0 else avg_fn(p_swa_, p_model_, n_averaged.to(device))
+            if is_first:
+                src = p_model_
+            else:
+                n_avg_device = n_averaged_by_device.get(device)
+                if n_avg_device is None:
+                    n_avg_device = n_averaged.to(device)
+                    n_averaged_by_device[device] = n_avg_device
+                src = avg_fn(p_swa_, p_model_, n_avg_device)
             p_swa_.copy_(src)
         n_averaged += 1
 
