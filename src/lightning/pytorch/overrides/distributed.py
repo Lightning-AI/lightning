@@ -203,18 +203,18 @@ class UnrepeatedDistributedSampler(DistributedSampler):
     def __iter__(self) -> Iterator[list[int]]:
         if not isinstance(self.dataset, Sized):
             raise TypeError("The given dataset must implement the `__len__` method.")
+        indices: Union[range, list[int]]
         if self.shuffle:
             # deterministically shuffle based on epoch
             g = torch.Generator()
             g.manual_seed(self.epoch)
-            indices = torch.randperm(len(self.dataset), generator=g).tolist()
+            permutation = torch.randperm(len(self.dataset), generator=g)
+            assert len(permutation) == self.total_size
+            # subsample before converting to a list so that only this rank's indices become Python objects
+            indices = permutation[self.rank : self.total_size : self.num_replicas].tolist()
         else:
-            indices = list(range(len(self.dataset)))
-
-        assert len(indices) == self.total_size
-
-        # subsample
-        indices = indices[self.rank : self.total_size : self.num_replicas]
+            # a strided range yields this rank's indices lazily without materializing the full index list
+            indices = range(self.rank, self.total_size, self.num_replicas)
         assert len(indices) == self.num_samples
 
         return iter(indices)

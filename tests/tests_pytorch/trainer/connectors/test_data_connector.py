@@ -19,17 +19,19 @@ from unittest.mock import Mock
 import pytest
 from lightning_utilities.test.warning import no_warning_call
 from torch import Tensor
-from torch.utils.data import BatchSampler, DataLoader, DistributedSampler, Sampler, SequentialSampler
+from torch.utils.data import BatchSampler, DataLoader, DistributedSampler, RandomSampler, Sampler, SequentialSampler
 
 import lightning.fabric
 from lightning.fabric.utilities.distributed import DistributedSamplerWrapper
 from lightning.fabric.utilities.warnings import PossibleUserWarning
 from lightning.pytorch import Trainer
 from lightning.pytorch.demos.boring_classes import BoringDataModule, BoringModel, RandomDataset
+from lightning.pytorch.overrides.distributed import UnrepeatedDistributedSampler, UnrepeatedDistributedSamplerWrapper
 from lightning.pytorch.trainer.connectors.data_connector import (
     _check_dataloader_iterable,
     _DataHookSelector,
     _DataLoaderSource,
+    _get_distributed_sampler,
     _worker_check,
     warning_cache,
 )
@@ -695,3 +697,35 @@ def test_iterable_check_on_known_iterators():
     dataloader.__iter__ = Mock()
     _check_dataloader_iterable(dataloader, Mock(), Mock())
     dataloader.__iter__.assert_not_called()
+
+
+@pytest.mark.parametrize("sampler_cls", [SequentialSampler, RandomSampler])
+def test_predict_distributed_sampler_selection(sampler_cls):
+    """Test that the prediction sampler avoids materializing indices that are implied by the dataset."""
+    dataset = list(range(11))
+    dataloader = DataLoader(dataset, sampler=sampler_cls(dataset), batch_size=2)
+    kwargs = {"num_replicas": 3, "rank": 1}
+    sampler = _get_distributed_sampler(dataloader, False, 0, RunningStage.PREDICTING, **kwargs)
+    if sampler_cls is SequentialSampler:
+        assert type(sampler) is UnrepeatedDistributedSampler
+        assert sampler.dataset is dataset
+        assert list(sampler) == [1, 4, 7, 10]
+    else:
+        assert type(sampler) is UnrepeatedDistributedSamplerWrapper
+        assert len(list(sampler)) == 4
+
+    class CustomSequentialSampler(SequentialSampler):
+        def __iter__(self):
+            return iter(reversed(range(len(self.data_source))))
+
+    dataloader = DataLoader(dataset, sampler=CustomSequentialSampler(dataset))
+    sampler = _get_distributed_sampler(dataloader, False, 0, RunningStage.PREDICTING, **kwargs)
+    assert type(sampler) is UnrepeatedDistributedSamplerWrapper
+    assert list(sampler) == [9, 6, 3, 0]
+
+    # the sampler wraps a different data source than the dataloader dataset
+    other = list(range(5))
+    dataloader = DataLoader(dataset, sampler=SequentialSampler(other))
+    sampler = _get_distributed_sampler(dataloader, False, 0, RunningStage.PREDICTING, **kwargs)
+    assert type(sampler) is UnrepeatedDistributedSamplerWrapper
+    assert list(sampler) == [1, 4]

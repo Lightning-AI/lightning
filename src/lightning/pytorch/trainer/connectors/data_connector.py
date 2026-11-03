@@ -30,7 +30,7 @@ from lightning.fabric.utilities.data import (
     suggested_max_num_workers,
 )
 from lightning.fabric.utilities.distributed import DistributedSamplerWrapper, _InfiniteBarrier
-from lightning.pytorch.overrides.distributed import UnrepeatedDistributedSamplerWrapper
+from lightning.pytorch.overrides.distributed import UnrepeatedDistributedSampler, UnrepeatedDistributedSamplerWrapper
 from lightning.pytorch.trainer import call
 from lightning.pytorch.trainer.states import RunningStage, TrainerFn
 from lightning.pytorch.utilities.combined_loader import CombinedLoader
@@ -238,7 +238,11 @@ def _get_distributed_sampler(
     kwargs["shuffle"] = shuffle and not overfit_batches
     kwargs.setdefault("seed", int(os.getenv("PL_GLOBAL_SEED", 0)))
     if mode == RunningStage.PREDICTING:
-        return UnrepeatedDistributedSamplerWrapper(dataloader.sampler, **kwargs)
+        sampler = dataloader.sampler
+        if type(sampler) is SequentialSampler and sampler.data_source is dataloader.dataset:
+            # sequential order is implied by the dataset, so there is no need to materialize the sampler indices
+            return UnrepeatedDistributedSampler(dataloader.dataset, **kwargs)
+        return UnrepeatedDistributedSamplerWrapper(sampler, **kwargs)
     if isinstance(dataloader.sampler, (RandomSampler, SequentialSampler)):
         return DistributedSampler(dataloader.dataset, **kwargs)
     return DistributedSamplerWrapper(dataloader.sampler, **kwargs)
