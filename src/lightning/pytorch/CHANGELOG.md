@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
 - Added `suggest_integrations` flag to `Trainer` to control whether optional integration suggestions (e.g., litmodels, litlogger) are shown in logs ([#21632](https://github.com/Lightning-AI/pytorch-lightning/pull/21632))
 
+- Added `enable_device_summary` flag to `Trainer` to control whether the GPU/TPU availability summary is logged at the start of the run ([#13378](https://github.com/Lightning-AI/pytorch-lightning/issues/13378))
+
 - Fixed ``ModelParallelStrategy`` single-file checkpointing when ``torch.compile`` wraps the model so optimizer states no longer raise ``KeyError`` during save ([#21357](https://github.com/Lightning-AI/pytorch-lightning/issues/21357))
 
 - Fixed gradient clipping not working with fused optimizers when using ``bf16-mixed`` precision ([#21435](https://github.com/Lightning-AI/pytorch-lightning/issues/21435))
