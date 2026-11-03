@@ -19,7 +19,11 @@ from torch.utils.data import BatchSampler, SequentialSampler
 
 from lightning.fabric.utilities.data import has_len
 from lightning.pytorch import LightningModule, Trainer, seed_everything
-from lightning.pytorch.overrides.distributed import UnrepeatedDistributedSampler, _IndexBatchSamplerWrapper
+from lightning.pytorch.overrides.distributed import (
+    UnrepeatedDistributedSampler,
+    UnrepeatedDistributedSamplerWrapper,
+    _IndexBatchSamplerWrapper,
+)
 from tests_pytorch.helpers.runif import RunIf
 
 
@@ -69,6 +73,57 @@ def test_unrepeated_distributed_sampler(shuffle):
     assert indices[1][-1] == 30 if shuffle else 101
     assert indices[2][-1] == 29 if shuffle else 102
     assert indices[3][-1] == 35 if shuffle else 99
+
+
+@pytest.mark.parametrize("shuffle", [False, True])
+@pytest.mark.parametrize(("length", "world_size"), [(103, 4), (8, 8), (13, 1), (0, 3), (5, 5)])
+def test_unrepeated_distributed_sampler_partition(shuffle, length, world_size):
+    """Test that the ranks get a disjoint partition of the dataset that matches the reference strided subsampling."""
+    dataset = range(length)
+    epoch = 3
+    if shuffle:
+        generator = torch.Generator()
+        generator.manual_seed(epoch)
+        reference = torch.randperm(length, generator=generator).tolist()
+    else:
+        reference = list(range(length))
+
+    gathered = []
+    for rank in range(world_size):
+        sampler = UnrepeatedDistributedSampler(dataset, rank=rank, num_replicas=world_size, shuffle=shuffle)
+        sampler.set_epoch(epoch)
+        indices = list(sampler)
+        assert all(type(i) is int for i in indices)
+        assert indices == reference[rank::world_size]
+        assert len(indices) == len(sampler)
+        assert list(sampler) == indices  # re-iterating gives the same indices
+        gathered.extend(indices)
+    assert sorted(gathered) == list(range(length))
+
+
+def test_unrepeated_distributed_sampler_shuffle_depends_on_epoch():
+    dataset = range(50)
+    sampler = UnrepeatedDistributedSampler(dataset, rank=1, num_replicas=4, shuffle=True)
+    sampler.set_epoch(0)
+    epoch0 = list(sampler)
+    sampler.set_epoch(1)
+    epoch1 = list(sampler)
+    assert epoch0 != epoch1
+    assert sorted(epoch0) != epoch0
+    sampler.set_epoch(0)
+    assert list(sampler) == epoch0
+
+
+@pytest.mark.parametrize("world_size", [1, 3])
+def test_unrepeated_distributed_sampler_wrapper_matches_sequential(world_size):
+    """Test that wrapping a ``SequentialSampler`` is equivalent to sampling the dataset directly."""
+    dataset = range(10)
+    for rank in range(world_size):
+        wrapper = UnrepeatedDistributedSamplerWrapper(
+            SequentialSampler(dataset), rank=rank, num_replicas=world_size, shuffle=False
+        )
+        direct = UnrepeatedDistributedSampler(dataset, rank=rank, num_replicas=world_size, shuffle=False)
+        assert list(wrapper) == list(direct)
 
 
 def test_index_batch_sampler():
