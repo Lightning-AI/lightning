@@ -765,10 +765,11 @@ class ModelCheckpoint(Checkpoint):
         # check and parse user passed keys in the string
         groups = re.findall(r"(\{.*?)[:\}]", filename)
 
-        # sort keys from longest to shortest to avoid replacing substring
+        # sort unique keys from longest to shortest to avoid replacing substring
         # eg: if keys are "epoch" and "epoch_test", the latter must be replaced first
-        groups = sorted(groups, key=lambda x: len(x), reverse=True)
+        groups = sorted(dict.fromkeys(groups), key=len, reverse=True)
 
+        metrics_for_format = metrics
         for group in groups:
             name = group[1:]
 
@@ -778,9 +779,11 @@ class ModelCheckpoint(Checkpoint):
             # support for dots: https://stackoverflow.com/a/7934969
             filename = filename.replace(group, f"{{0[{name}]")
 
-            if name not in metrics:
-                metrics[name] = torch.tensor(0)
-        filename = filename.format(metrics)
+            if name not in metrics_for_format:
+                if metrics_for_format is metrics:
+                    metrics_for_format = metrics.copy()
+                metrics_for_format[name] = torch.tensor(0)
+        filename = filename.format(metrics_for_format)
 
         if prefix is not None:
             filename = self.CHECKPOINT_JOIN_CHAR.join([prefix, filename])

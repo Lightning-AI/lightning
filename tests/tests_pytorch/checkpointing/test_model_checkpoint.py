@@ -476,6 +476,18 @@ def test_model_checkpoint_format_checkpoint_name(tmp_path, monkeypatch):
     )
     assert ckpt_name == "mAP@0.50=0.2000"
 
+    # missing metric keys default to 0 without mutating caller's metrics dictionary in-place
+    ckpt = ModelCheckpoint(dirpath=None, filename="{epoch}-{missing_metric:d}")
+    caller_metrics = {"epoch": torch.tensor(2)}
+    ckpt_name = ckpt.format_checkpoint_name(caller_metrics)
+    assert ckpt_name == "epoch=2-missing_metric=0.ckpt"
+    assert caller_metrics == {"epoch": torch.tensor(2)}
+    assert "missing_metric" not in caller_metrics
+
+    # duplicate placeholders in template string
+    ckpt_dup = ModelCheckpoint(dirpath=None, filename="{epoch}-{epoch:03d}")
+    assert ckpt_dup.format_checkpoint_name({"epoch": 3}) == "epoch=3-epoch=003.ckpt"
+
 
 class ModelCheckpointExtensionTest(ModelCheckpoint):
     FILE_EXTENSION = ".tpkc"
