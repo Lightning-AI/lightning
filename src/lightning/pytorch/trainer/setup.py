@@ -150,6 +150,9 @@ def _init_profiler(trainer: "pl.Trainer", profiler: Optional[Union[Profiler, str
 
 
 def _log_device_info(trainer: "pl.Trainer") -> None:
+    if not getattr(trainer, "enable_device_summary", True):
+        return
+
     if CUDAAccelerator.is_available():
         gpu_available = True
         gpu_type = " (cuda)"

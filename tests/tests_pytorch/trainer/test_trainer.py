@@ -65,6 +65,28 @@ if _OMEGACONF_AVAILABLE:
     from omegaconf import OmegaConf
 
 
+def test_enable_device_summary(caplog):
+    """Test that the device summary can be disabled via the `enable_device_summary` flag."""
+    with caplog.at_level(logging.INFO):
+        trainer = Trainer(enable_device_summary=False)
+    assert trainer.enable_device_summary is False
+    assert "GPU available" not in caplog.text
+    assert "TPU available" not in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        trainer = Trainer(enable_device_summary=True)
+    assert trainer.enable_device_summary is True
+    assert "GPU available" in caplog.text
+    assert "TPU available" in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        trainer = Trainer()
+    assert trainer.enable_device_summary is True
+    assert "GPU available" in caplog.text
+
+
 def test_trainer_error_when_input_not_lightning_module():
     """Test that a useful error gets raised when the Trainer methods receive something other than a LightningModule."""
     trainer = Trainer()

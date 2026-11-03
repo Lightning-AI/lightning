@@ -117,6 +117,7 @@ class Trainer:
         enable_checkpointing: Optional[bool] = None,
         enable_progress_bar: Optional[bool] = None,
         enable_model_summary: Optional[bool] = None,
+        enable_device_summary: Optional[bool] = None,
         accumulate_grad_batches: int = 1,
         gradient_clip_val: Optional[Union[int, float]] = None,
         gradient_clip_algorithm: Optional[str] = None,
@@ -241,6 +242,11 @@ class Trainer:
                 Default: ``True``.
 
             enable_model_summary: Whether to enable model summarization by default.
+                Default: ``True``.
+
+            enable_device_summary: Whether to log the device summary (GPU/TPU availability and usage) at the start of
+                the run. Set to ``False`` to keep the output clean, for example when running many short evaluations
+                in a loop.
                 Default: ``True``.
 
             accumulate_grad_batches: Accumulates gradients over k batches before stepping the optimizer.
@@ -422,6 +428,9 @@ class Trainer:
             if num_sanity_val_steps is None:
                 num_sanity_val_steps = 2
 
+        if enable_device_summary is None:
+            enable_device_summary = True
+
         # init connectors
         self._data_connector = _DataConnector(self)
 
@@ -495,6 +504,7 @@ class Trainer:
                 " is recommended only for model debugging."
             )
         self._detect_anomaly: bool = detect_anomaly
+        self.enable_device_summary: bool = enable_device_summary
 
         setup._log_device_info(self)
 
