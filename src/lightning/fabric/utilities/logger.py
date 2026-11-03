@@ -136,15 +136,21 @@ def _sanitize_params(params: dict[str, Any]) -> dict[str, Any]:
         'string': 'abc'}
 
     """
-    for k in params:
-        if _NUMPY_AVAILABLE:
-            import numpy as np
+    if _NUMPY_AVAILABLE:
+        import numpy as np
 
-            if isinstance(params[k], (np.bool_, np.integer, np.floating)):
-                params[k] = params[k].item()
-        if type(params[k]) not in [bool, int, float, str, Tensor]:
-            params[k] = str(params[k])
-    return params
+        np_scalar_types: tuple[type, ...] = (np.bool_, np.integer, np.floating)
+    else:
+        np_scalar_types = ()
+
+    sanitized: dict[str, Any] = {}
+    for k, v in params.items():
+        if np_scalar_types and isinstance(v, np_scalar_types):
+            v = v.item()
+        if type(v) not in (bool, int, float, str, Tensor):
+            v = str(v)
+        sanitized[k] = v
+    return sanitized
 
 
 def _convert_json_serializable(params: dict[str, Any]) -> dict[str, Any]:

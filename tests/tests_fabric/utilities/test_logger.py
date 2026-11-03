@@ -154,19 +154,27 @@ def test_sanitize_params():
         "layer": torch.nn.BatchNorm1d,
         "tensor": torch.ones(3),
     }
-    params = _sanitize_params(params)
+    original_list = params["list"]
+    original_layer = params["layer"]
+    sanitized = _sanitize_params(params)
 
-    assert params["float"] == 0.3
-    assert params["int"] == 1
-    assert params["string"] == "abc"
-    assert params["bool"] is True
-    assert params["list"] == "[1, 2, 3]"
-    assert params["np_bool"] is False
-    assert params["np_int"] == 5
-    assert params["np_double"] == 3.14159
-    assert params["namespace"] == "Namespace(foo=3)"
-    assert params["layer"] == "<class 'torch.nn.modules.batchnorm.BatchNorm1d'>"
-    assert torch.equal(params["tensor"], torch.ones(3))
+    # Input dict must not be mutated in place
+    assert sanitized is not params
+    assert params["list"] is original_list
+    assert params["layer"] is original_layer
+    assert isinstance(params["np_int"], np.int_)
+
+    assert sanitized["float"] == 0.3
+    assert sanitized["int"] == 1
+    assert sanitized["string"] == "abc"
+    assert sanitized["bool"] is True
+    assert sanitized["list"] == "[1, 2, 3]"
+    assert sanitized["np_bool"] is False
+    assert sanitized["np_int"] == 5
+    assert sanitized["np_double"] == 3.14159
+    assert sanitized["namespace"] == "Namespace(foo=3)"
+    assert sanitized["layer"] == "<class 'torch.nn.modules.batchnorm.BatchNorm1d'>"
+    assert torch.equal(sanitized["tensor"], torch.ones(3))
 
 
 def test_add_prefix():
