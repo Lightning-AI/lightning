@@ -694,3 +694,22 @@ def test_early_stopping_reasons(
             assert early_stopping.stopped_epoch > 0
         else:
             assert early_stopping.stopped_epoch == 0
+
+
+@pytest.mark.parametrize(
+    ("mode", "divergence_threshold", "current", "expected_op"),
+    [
+        ("min", 8.0, torch.tensor(10.0), ">"),
+        ("max", 0.5, torch.tensor(0.2), "<"),
+    ],
+)
+def test_early_stopping_divergence_threshold_reason_message(mode, divergence_threshold, current, expected_op):
+    early_stopping = EarlyStopping(monitor="val_metric", mode=mode, divergence_threshold=divergence_threshold)
+    should_stop, reason = early_stopping._evaluate_stopping_criteria(current)
+    assert should_stop is True
+    assert early_stopping.stopping_reason == EarlyStoppingReason.DIVERGENCE_THRESHOLD
+    assert reason == (
+        f"Divergence threshold reached: val_metric = {current} {expected_op} {divergence_threshold}."
+        " Signaling Trainer to stop."
+    )
+

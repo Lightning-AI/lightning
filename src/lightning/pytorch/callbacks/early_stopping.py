@@ -264,9 +264,10 @@ class EarlyStopping(Callback):
         elif self.divergence_threshold is not None and self.monitor_op(-current, -self.divergence_threshold):
             should_stop = True
             self.stopping_reason = EarlyStoppingReason.DIVERGENCE_THRESHOLD
+            divergence_order = ">" if self.mode == "min" else "<"
             reason = (
                 "Divergence threshold reached:"
-                f" {self.monitor} = {current} {self.order_dict[self.mode]} {self.divergence_threshold}."
+                f" {self.monitor} = {current} {divergence_order} {self.divergence_threshold}."
                 " Signaling Trainer to stop."
             )
         elif self.monitor_op(current - self.min_delta, self.best_score.to(current.device)):
