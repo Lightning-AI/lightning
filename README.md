@@ -107,8 +107,7 @@ conda install lightning -c conda-forge
 
 #### Install stable version
 
-Install future release from the source
-
+Install a future release from the source
 ```bash
 pip install https://github.com/Lightning-AI/lightning/archive/refs/heads/release/stable.zip -U
 ```
@@ -143,7 +142,7 @@ import lightning as L
 # Step 1: Define a LightningModule
 # --------------------------------
 # A LightningModule (nn.Module subclass) defines a full *system*
-# (ie: an LLM, diffusion model, autoencoder, or simple image classifier).
+# (ie., an LLM, diffusion model, autoencoder, or simple image classifier).
 
 
 class LitAutoEncoder(L.LightningModule):
