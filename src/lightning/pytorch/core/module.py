@@ -1014,7 +1014,7 @@ class LightningModule(
                 "scheduler": lr_scheduler,
                 # The unit of the scheduler's step size, could also be 'step'.
                 # 'epoch' updates the scheduler on epoch end whereas 'step'
-                # updates it after a optimizer update.
+                # updates it after an optimizer update.
                 "interval": "epoch",
                 # How many epochs/steps should pass between calls to
                 # `scheduler.step()`. 1 corresponds to updating the learning
