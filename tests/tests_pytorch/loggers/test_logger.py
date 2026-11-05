@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import pickle
 from argparse import Namespace
 from copy import deepcopy
@@ -25,7 +26,7 @@ from lightning.fabric.utilities.logger import _convert_params, _sanitize_params
 from lightning.pytorch import Trainer
 from lightning.pytorch.demos.boring_classes import BoringDataModule, BoringModel
 from lightning.pytorch.loggers import Logger, TensorBoardLogger
-from lightning.pytorch.loggers.logger import DummyExperiment, DummyLogger
+from lightning.pytorch.loggers.logger import DummyExperiment, DummyLogger, merge_dicts
 from lightning.pytorch.loggers.utilities import _scan_checkpoints
 from lightning.pytorch.utilities.rank_zero import rank_zero_only
 
@@ -348,3 +349,41 @@ def test_scan_checkpoints(checkpoint_callback_mock, tmp_path, save_top_k: int):
         logged_model_time[c[1]] = c[0] + 1000
     checkpoints = _scan_checkpoints(checkpoint_callback_mock, logged_model_time)
     assert len(checkpoints) == 0
+
+
+@patch("lightning.pytorch.callbacks.ModelCheckpoint")
+def test_scan_checkpoints_single_stat_and_missing_paths(checkpoint_callback_mock, tmp_path):
+    """Verify _scan_checkpoints performs a single stat syscall per path and ignores empty/deleted paths."""
+    ckpt_path = str(tmp_path / "model.ckpt")
+    with open(ckpt_path, "w") as f:
+        f.write("data")
+
+    checkpoint_callback_mock.last_model_path = ""
+    checkpoint_callback_mock.current_score = None
+    checkpoint_callback_mock.best_model_path = str(tmp_path / "deleted.ckpt")
+    checkpoint_callback_mock.best_model_score = 0.5
+    checkpoint_callback_mock.best_k_models = {ckpt_path: 0.9, str(tmp_path): 0.1}
+
+    with patch("lightning.pytorch.loggers.utilities.os.stat", wraps=os.stat) as stat_mock:
+        checkpoints = _scan_checkpoints(checkpoint_callback_mock, {})
+
+    assert len(checkpoints) == 1
+    assert checkpoints[0][1] == ckpt_path
+    assert checkpoints[0][2] == 0.9
+    assert checkpoints[0][3] == "best_k"
+    # Empty path ("") is skipped; each remaining path is stat'd once instead of twice
+    assert stat_mock.call_count == 3
+
+
+def test_merge_dicts_deterministic_order_and_edge_cases():
+    """Verify merge_dicts preserves insertion order and handles empty/None inputs."""
+    assert merge_dicts([]) == {}
+    assert merge_dicts([{"a": None, "b": 2.0}, {"a": None, "b": 4.0}]) == {"b": 3.0}
+
+    d1 = {"z": 1.0, "a": 2.0, "nested": {"y": 10.0, "x": 20.0}}
+    d2 = {"a": 4.0, "m": 5.0, "nested": {"x": 40.0, "w": 30.0}}
+    merged = merge_dicts([d1, d2])
+    assert list(merged.keys()) == ["z", "a", "nested", "m"]
+    assert list(merged["nested"].keys()) == ["y", "x", "w"]
+    assert merged == {"z": 1.0, "a": 3.0, "m": 5.0, "nested": {"y": 10.0, "x": 30.0, "w": 30.0}}
+
