@@ -143,6 +143,194 @@ def test_val_check_interval_float_with_none_check_val_every_n_epoch():
         )
 
 
+@pytest.mark.parametrize("accumulate_grad_batches", [1, 3])
+def test_val_check_interval_unit_step(tmp_path, accumulate_grad_batches):
+    """Test that `val_check_interval_unit='step'` validates every N optimizer steps, even when the number of batches
+    per epoch is not a multiple of `accumulate_grad_batches`."""
+
+    class TestModel(BoringModel):
+        def __init__(self):
+            super().__init__()
+            self.validation_called_at_step = []
+
+        def on_validation_start(self):
+            self.validation_called_at_step.append(self.trainer.global_step)
+
+    # 7 batches with accumulation 3 leaves a partial window that still steps, so each epoch has 3 optimizer steps
+    model = TestModel()
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        limit_train_batches=7,
+        limit_val_batches=1,
+        max_epochs=4,
+        val_check_interval=2,
+        val_check_interval_unit="step",
+        check_val_every_n_epoch=None,
+        num_sanity_val_steps=0,
+        accumulate_grad_batches=accumulate_grad_batches,
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    trainer.fit(model)
+
+    assert model.validation_called_at_step == list(range(2, trainer.global_step + 1, 2))
+
+
+@pytest.mark.parametrize("stop_at_step", [5, 6])
+def test_val_check_interval_unit_step_resume(tmp_path, stop_at_step):
+    """Test that validation stays on multiples of `val_check_interval` optimizer steps after resuming, whether the
+    checkpoint was saved mid-epoch or at the end of an epoch."""
+
+    class TestModel(BoringModel):
+        def __init__(self):
+            super().__init__()
+            self.validation_called_at_step = []
+
+        def on_validation_start(self):
+            self.validation_called_at_step.append(self.trainer.global_step)
+
+    trainer_kwargs = {
+        "default_root_dir": tmp_path,
+        "limit_train_batches": 7,
+        "limit_val_batches": 1,
+        "val_check_interval": 2,
+        "val_check_interval_unit": "step",
+        "check_val_every_n_epoch": None,
+        "num_sanity_val_steps": 0,
+        "accumulate_grad_batches": 3,
+        "logger": False,
+        "enable_checkpointing": False,
+        "enable_progress_bar": False,
+        "enable_model_summary": False,
+    }
+    model = TestModel()
+    trainer = Trainer(max_steps=stop_at_step, **trainer_kwargs)
+    trainer.fit(model)
+    ckpt_path = tmp_path / "stopped.ckpt"
+    trainer.save_checkpoint(ckpt_path)
+
+    resumed_model = TestModel()
+    trainer = Trainer(max_epochs=4, **trainer_kwargs)
+    trainer.fit(resumed_model, ckpt_path=ckpt_path)
+
+    validated_at = model.validation_called_at_step + resumed_model.validation_called_at_step
+    assert validated_at == list(range(2, trainer.global_step + 1, 2))
+
+
+def test_val_check_interval_unit_step_manual_optimization_skipped_step(tmp_path):
+    """Test that a batch that doesn't step the optimizer doesn't validate again at the same `global_step`."""
+
+    class TestModel(BoringModel):
+        def __init__(self):
+            super().__init__()
+            self.automatic_optimization = False
+            self.validation_called_at_step = []
+
+        def training_step(self, batch, batch_idx):
+            opt = self.optimizers()
+            loss = self.step(batch)
+            self.manual_backward(loss)
+            if batch_idx not in (2, 3):
+                opt.step()
+            opt.zero_grad()
+
+        def on_validation_start(self):
+            self.validation_called_at_step.append(self.trainer.global_step)
+
+    model = TestModel()
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        limit_train_batches=10,
+        limit_val_batches=1,
+        max_epochs=1,
+        val_check_interval=2,
+        val_check_interval_unit="step",
+        check_val_every_n_epoch=None,
+        num_sanity_val_steps=0,
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    trainer.fit(model)
+
+    assert trainer.global_step == 8
+    assert model.validation_called_at_step == [2, 4, 6, 8]
+
+
+@pytest.mark.parametrize(
+    ("steps_per_batch", "val_check_interval", "expected"),
+    [
+        # steps 2, 4, ..., 12: 3 is passed on the way to 4, 9 on the way to 10
+        (2, 3, [4, 6, 10, 12]),
+        # steps 3, 6, ..., 18: every batch passes a multiple of 2
+        (3, 2, [3, 6, 9, 12, 15, 18]),
+    ],
+)
+def test_val_check_interval_unit_step_manual_optimization_multiple_steps(
+    tmp_path, steps_per_batch, val_check_interval, expected
+):
+    """Test that a batch taking several optimizer steps validates once it reaches or passes a multiple of
+    `val_check_interval`, even when `global_step` never lands exactly on it."""
+
+    class TestModel(BoringModel):
+        def __init__(self):
+            super().__init__()
+            self.automatic_optimization = False
+            self.validation_called_at_step = []
+
+        def training_step(self, batch, batch_idx):
+            opt = self.optimizers()
+            loss = self.step(batch)
+            self.manual_backward(loss)
+            for _ in range(steps_per_batch):
+                opt.step()
+            opt.zero_grad()
+
+        def on_validation_start(self):
+            self.validation_called_at_step.append(self.trainer.global_step)
+
+    model = TestModel()
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        limit_train_batches=6,
+        limit_val_batches=1,
+        max_epochs=1,
+        val_check_interval=val_check_interval,
+        val_check_interval_unit="step",
+        check_val_every_n_epoch=None,
+        num_sanity_val_steps=0,
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    trainer.fit(model)
+
+    assert trainer.global_step == 6 * steps_per_batch
+    assert model.validation_called_at_step == expected
+
+
+@pytest.mark.parametrize(
+    ("val_check_interval", "check_val_every_n_epoch"),
+    [(2, 1), ("00:00:00:10", None)],
+)
+def test_val_check_interval_unit_step_requires_int_and_no_epoch_gating(val_check_interval, check_val_every_n_epoch):
+    with pytest.raises(MisconfigurationException, match="requires an integer `val_check_interval`"):
+        Trainer(
+            val_check_interval=val_check_interval,
+            val_check_interval_unit="step",
+            check_val_every_n_epoch=check_val_every_n_epoch,
+        )
+
+
+def test_val_check_interval_unit_invalid():
+    with pytest.raises(MisconfigurationException, match="should be 'batch' or 'step'"):
+        Trainer(val_check_interval_unit="epoch")
+
+
 @pytest.mark.parametrize(
     "interval",
     [

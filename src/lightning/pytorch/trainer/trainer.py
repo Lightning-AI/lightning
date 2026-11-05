@@ -26,7 +26,7 @@ import os
 from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from datetime import timedelta
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 from weakref import proxy
 
 import torch
@@ -112,6 +112,7 @@ class Trainer:
         overfit_batches: Union[int, float] = 0.0,
         val_check_interval: Optional[Union[int, float, str, timedelta, dict[str, int]]] = None,
         check_val_every_n_epoch: Optional[int] = 1,
+        val_check_interval_unit: Literal["batch", "step"] = "batch",
         num_sanity_val_steps: Optional[int] = None,
         log_every_n_steps: Optional[int] = None,
         enable_checkpointing: Optional[bool] = None,
@@ -224,6 +225,14 @@ class Trainer:
                 For ``None`` or ``1`` cases, the time-based behavior of ``val_check_interval`` applies without
                 additional alignment.
                 Default: ``1``.
+
+            val_check_interval_unit: The unit of an ``int`` ``val_check_interval`` when
+                ``check_val_every_n_epoch=None``. ``"batch"`` counts training batches. ``"step"`` counts optimizer
+                steps (``trainer.global_step``), so validation stays aligned with step-based checkpointing and logging
+                when ``accumulate_grad_batches > 1`` and the number of batches per epoch is not a multiple of it.
+                With manual optimization a batch can take more than one optimizer step, in which case validation runs
+                after the first batch that reaches or passes each multiple of ``val_check_interval``.
+                Default: ``"batch"``.
 
             num_sanity_val_steps: Sanity check runs n validation batches before starting the training routine.
                 Set it to `-1` to run all batches in all validation dataloaders.
@@ -466,10 +475,12 @@ class Trainer:
 
         # init data flags
         self.check_val_every_n_epoch: Optional[int]
+        self.val_check_interval_unit: str
         self._data_connector.on_trainer_init(
             val_check_interval,
             reload_dataloaders_every_n_epochs,
             check_val_every_n_epoch,
+            val_check_interval_unit,
         )
 
         # gradient clipping

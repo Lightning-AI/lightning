@@ -71,6 +71,7 @@ def _init_debugging_flags(
         trainer.val_check_interval = 1.0
         trainer._val_check_time_interval = None  # time not applicable in fast_dev_run
         trainer.check_val_every_n_epoch = 1
+        trainer.val_check_interval_unit = "batch"
         trainer.loggers = [DummyLogger()] if trainer.loggers else []
         rank_zero_info(
             f"Running in `fast_dev_run` mode: will run the requested loop using {num_batches} batch(es). "
