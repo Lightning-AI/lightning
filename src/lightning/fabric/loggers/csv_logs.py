@@ -148,7 +148,7 @@ class CSVLogger(Logger):
     ) -> None:
         metrics = _add_prefix(metrics, self._prefix, self.LOGGER_JOIN_CHAR)
         if step is None:
-            step = len(self.experiment.metrics)
+            step = self.experiment._step_idx
         self.experiment.log_metrics(metrics, step)
         if (step + 1) % self._flush_logs_every_n_steps == 0:
             self.save()
@@ -202,6 +202,7 @@ class _ExperimentWriter:
     def __init__(self, log_dir: str) -> None:
         self.metrics: list[dict[str, float]] = []
         self.metrics_keys: list[str] = []
+        self._step_idx: int = 0
 
         self._fs = get_filesystem(log_dir)
         self.log_dir = log_dir
@@ -219,11 +220,12 @@ class _ExperimentWriter:
             return value
 
         if step is None:
-            step = len(self.metrics)
+            step = self._step_idx
 
         metrics = {k: _handle_value(v) for k, v in metrics_dict.items()}
         metrics["step"] = step
         self.metrics.append(metrics)
+        self._step_idx += 1
 
     def save(self) -> None:
         """Save recorded metrics into files."""
@@ -250,8 +252,9 @@ class _ExperimentWriter:
         """Records new keys that have not been logged before."""
         current_keys = set().union(*self.metrics)
         new_keys = current_keys - set(self.metrics_keys)
-        self.metrics_keys.extend(new_keys)
-        self.metrics_keys.sort()
+        if new_keys:
+            self.metrics_keys.extend(new_keys)
+            self.metrics_keys.sort()
         return new_keys
 
     def _rewrite_with_new_header(self, fieldnames: list[str]) -> None:
