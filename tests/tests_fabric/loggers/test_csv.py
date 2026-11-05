@@ -133,18 +133,19 @@ def test_metrics_reset_after_save(tmp_path):
 
 def test_automatic_step_tracking(tmp_path):
     """Test that the logger keeps track of the step value if it isn't passed in explicitly."""
-    logger = CSVLogger(tmp_path, flush_logs_every_n_steps=3)
-    logger.save = MagicMock()
+    logger = CSVLogger(tmp_path, flush_logs_every_n_steps=2)
     metrics = {"test": 0.1}
     logger.log_metrics(metrics, step=None)
-    logger.save.assert_not_called()
     assert logger.experiment.metrics[0]["step"] == 0
+    logger.log_metrics(metrics, step=None)  # triggers save() and clears in-memory metrics
+    assert not logger.experiment.metrics
     logger.log_metrics(metrics, step=None)
-    logger.save.assert_not_called()
-    assert logger.experiment.metrics[1]["step"] == 1
+    assert logger.experiment.metrics[0]["step"] == 2
     logger.log_metrics(metrics, step=None)
-    logger.save.assert_called_once()
-    assert logger.experiment.metrics[2]["step"] == 2
+    with open(logger.experiment.metrics_file_path) as fp:
+        rows = [line.strip().split(",") for line in fp.readlines()]
+    step_col = rows[0].index("step")
+    assert [int(row[step_col]) for row in rows[1:]] == [0, 1, 2, 3]
 
 
 @mock.patch(
