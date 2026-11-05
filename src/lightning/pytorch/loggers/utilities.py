@@ -13,7 +13,8 @@
 # limitations under the License.
 """Utilities for loggers."""
 
-from pathlib import Path
+import os
+import stat
 from typing import Any, Union
 
 from torch import Tensor
@@ -49,11 +50,22 @@ def _scan_checkpoints(checkpoint_callback: Checkpoint, logged_model_time: dict) 
         for key, value in checkpoint_callback.best_k_models.items():
             checkpoints[key] = (value, "best_k")
 
-    checkpoints = sorted(
-        (Path(p).stat().st_mtime, p, s, tag) for p, (s, tag) in checkpoints.items() if Path(p).is_file()
-    )
-    checkpoints = [c for c in checkpoints if c[1] not in logged_model_time or logged_model_time[c[1]] < c[0]]
-    return checkpoints
+    unlogged_checkpoints: list[tuple[float, str, float, str]] = []
+    for p, (s, tag) in checkpoints.items():
+        if not p:
+            continue
+        try:
+            st = os.stat(os.fspath(p))
+        except (OSError, TypeError):
+            continue
+        if not stat.S_ISREG(st.st_mode):
+            continue
+        mtime = st.st_mtime
+        if p not in logged_model_time or logged_model_time[p] < mtime:
+            unlogged_checkpoints.append((mtime, p, s, tag))
+
+    unlogged_checkpoints.sort()
+    return unlogged_checkpoints
 
 
 def _log_hyperparams(trainer: "pl.Trainer") -> None:

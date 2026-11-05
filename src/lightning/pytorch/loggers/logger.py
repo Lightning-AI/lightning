@@ -13,11 +13,8 @@
 # limitations under the License.
 """Abstract base class used to build new loggers."""
 
-import functools
-import operator
 import statistics
 from abc import ABC
-from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Any, Callable, Optional
 
@@ -137,15 +134,15 @@ def merge_dicts(  # pragma: no cover
 
     """
     agg_key_funcs = agg_key_funcs or {}
-    keys = list(functools.reduce(operator.or_, [set(d.keys()) for d in dicts]))
-    d_out: dict = defaultdict(dict)
-    for k in keys:
+    d_out: dict = {}
+    for k in dict.fromkeys(k for d in dicts for k in d):
+        values_to_agg = [v for d_in in dicts if (v := d_in.get(k)) is not None]
+        if not values_to_agg:
+            continue
         fn = agg_key_funcs.get(k)
-        values_to_agg = [v for v in [d_in.get(k) for d_in in dicts] if v is not None]
-
         if isinstance(values_to_agg[0], dict):
             d_out[k] = merge_dicts(values_to_agg, fn, default_func)
         else:
             d_out[k] = (fn or default_func)(values_to_agg)
 
-    return dict(d_out)
+    return d_out
