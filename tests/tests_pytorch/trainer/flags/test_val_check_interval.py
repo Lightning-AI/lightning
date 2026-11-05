@@ -261,6 +261,59 @@ def test_val_check_interval_unit_step_manual_optimization_skipped_step(tmp_path)
 
 
 @pytest.mark.parametrize(
+    ("steps_per_batch", "val_check_interval", "expected"),
+    [
+        # steps 2, 4, ..., 12: 3 is passed on the way to 4, 9 on the way to 10
+        (2, 3, [4, 6, 10, 12]),
+        # steps 3, 6, ..., 18: every batch passes a multiple of 2
+        (3, 2, [3, 6, 9, 12, 15, 18]),
+    ],
+)
+def test_val_check_interval_unit_step_manual_optimization_multiple_steps(
+    tmp_path, steps_per_batch, val_check_interval, expected
+):
+    """Test that a batch taking several optimizer steps validates once it reaches or passes a multiple of
+    `val_check_interval`, even when `global_step` never lands exactly on it."""
+
+    class TestModel(BoringModel):
+        def __init__(self):
+            super().__init__()
+            self.automatic_optimization = False
+            self.validation_called_at_step = []
+
+        def training_step(self, batch, batch_idx):
+            opt = self.optimizers()
+            loss = self.step(batch)
+            self.manual_backward(loss)
+            for _ in range(steps_per_batch):
+                opt.step()
+            opt.zero_grad()
+
+        def on_validation_start(self):
+            self.validation_called_at_step.append(self.trainer.global_step)
+
+    model = TestModel()
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        limit_train_batches=6,
+        limit_val_batches=1,
+        max_epochs=1,
+        val_check_interval=val_check_interval,
+        val_check_interval_unit="step",
+        check_val_every_n_epoch=None,
+        num_sanity_val_steps=0,
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    trainer.fit(model)
+
+    assert trainer.global_step == 6 * steps_per_batch
+    assert model.validation_called_at_step == expected
+
+
+@pytest.mark.parametrize(
     ("val_check_interval", "check_val_every_n_epoch"),
     [(2, 1), ("00:00:00:10", None)],
 )

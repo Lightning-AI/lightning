@@ -230,6 +230,8 @@ class Trainer:
                 ``check_val_every_n_epoch=None``. ``"batch"`` counts training batches. ``"step"`` counts optimizer
                 steps (``trainer.global_step``), so validation stays aligned with step-based checkpointing and logging
                 when ``accumulate_grad_batches > 1`` and the number of batches per epoch is not a multiple of it.
+                With manual optimization a batch can take more than one optimizer step, in which case validation runs
+                after the first batch that reaches or passes each multiple of ``val_check_interval``.
                 Default: ``"batch"``.
 
             num_sanity_val_steps: Sanity check runs n validation batches before starting the training routine.

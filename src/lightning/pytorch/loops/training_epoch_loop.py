@@ -94,7 +94,7 @@ class _TrainingEpochLoop(loops._Loop):
         self._batches_that_stepped: int = 0
         self._restart_stage = RestartStage.NONE
         self._skip_next_val = False
-        self._last_val_check_step: Optional[int] = None
+        self._prev_global_step: Optional[int] = None
 
     @property
     def total_batch_idx(self) -> int:
@@ -292,6 +292,10 @@ class _TrainingEpochLoop(loops._Loop):
             # fast forward progress counters to end of validation
             self.val_loop.increment_progress_to_evaluation_end()
 
+        if self._prev_global_step is None:
+            # first batch of this run. Any validation up to the current step was handled before the checkpoint was saved
+            self._prev_global_step = self.global_step
+
         # we are going to train first so the val loop does not need to restart
         self.val_loop.restarting = False
 
@@ -394,8 +398,10 @@ class _TrainingEpochLoop(loops._Loop):
             should_check_val = False
             self._skip_next_val = False
 
+        # validation doesn't change `global_step`, so record it now for the next step-based check
+        self._prev_global_step = self.global_step
+
         if should_check_val:
-            self._last_val_check_step = self.global_step
             # this needs to be set so the correct `trainer._active_loop` is picked
             self.trainer.validating = True
             # save and reset this state in case validation runs inside training loop (val_check_interval<1.0)
@@ -556,13 +562,16 @@ class _TrainingEpochLoop(loops._Loop):
         elif self.trainer.val_check_interval_unit == "step":
             # count optimizer steps instead of batches, so a partial accumulation window at the end of an epoch
             # (which still steps the optimizer) doesn't shift validation relative to `global_step`. With manual
-            # optimization a batch may not step at all, so don't validate twice at the same step
-            assert self.trainer.val_check_batch is not None
-            is_val_check_batch = (
-                not self._should_accumulate()
-                and self.global_step % self.trainer.val_check_batch == 0
-                and self.global_step != self._last_val_check_step
-            )
+            # optimization a batch can take any number of steps, so validate when a multiple was reached since the
+            # previous batch, not only when `global_step` lands exactly on one
+            val_check_steps = self.trainer.val_check_batch
+            assert val_check_steps is not None
+            if self._prev_global_step is None:
+                # restart check on the restored batch, before any batch ran in this run
+                reached_multiple = self.global_step % val_check_steps == 0
+            else:
+                reached_multiple = self.global_step // val_check_steps > self._prev_global_step // val_check_steps
+            is_val_check_batch = not self._should_accumulate() and reached_multiple
         elif self.trainer.val_check_batch != float("inf"):
             # if we got here, we’re in batch-based mode, so this can’t be None
             assert self.trainer.val_check_batch is not None
