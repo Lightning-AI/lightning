@@ -371,6 +371,7 @@ def test_multiple_lr_find_calls_gives_same_results(tmp_path):
         (1, 1, [0, 1, 2, 3], False),
         (0, 1, [float("nan"), float("nan"), 0, float("inf"), 1, 2, 3, float("inf"), 2, float("nan"), 1], False),
         (4, 1, [float("nan"), float("nan"), 0, float("inf"), 1, 2, 3, float("inf"), 2, float("nan"), 1], False),
+        (0, 5, [0, 1, 2, 3], True),  # skip_end past the sample count leaves nothing, it must not wrap around
     ],
 )
 def test_suggestion_not_enough_finite_points(losses, skip_begin, skip_end, expected_error, caplog):
@@ -401,7 +402,8 @@ def test_suggestion_with_skip_end_zero():
     """`skip_end=0` asks for nothing to be skipped, so the last sample has to stay in the window."""
     lr_finder = _LRFinder(mode="exponential", lr_min=1e-8, lr_max=1, num_training=100)
     # the steepest drop is between the last two points, so it is only reachable when nothing is skipped
-    lr_finder.results = {"lr": [0.1, 0.2, 0.3, 0.4], "loss": [10.0, 9.0, 8.0, 1.0]}
+    # (every slope differs, so the argmin never comes down to a float tie)
+    lr_finder.results = {"lr": [0.1, 0.2, 0.3, 0.4], "loss": [10.0, 8.0, 7.0, 1.0]}
 
     assert lr_finder.suggestion(skip_begin=0, skip_end=0) == 0.4
     assert lr_finder._optimal_idx == 3
