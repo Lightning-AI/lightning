@@ -26,7 +26,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- Fixed CPU `ddp_spawn` workers aborting at exit by always registering the process-group atexit destroy handler (not only for NCCL), so gloo groups are torn down before interpreter shutdown ([#PRNUM](https://github.com/Lightning-AI/pytorch-lightning/pull/PRNUM))
+- Fixed CPU `ddp_spawn` workers aborting at exit by always registering the process-group atexit destroy handler (not only for NCCL), so gloo groups are torn down before interpreter shutdown ([#22126](https://github.com/Lightning-AI/pytorch-lightning/pull/22126))
 
 - Fixed type checking for the `BitsandbytesPrecision` plugin and raised the supported `bitsandbytes` ceiling to `<0.50` (compatible with 0.48/0.49) ([#21858](https://github.com/Lightning-AI/pytorch-lightning/pull/21858))
 
