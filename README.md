@@ -520,7 +520,7 @@ class MyCustomTrainer:
     def __init__(self, accelerator="auto", strategy="auto", devices="auto", precision="32-true"):
         self.fabric = L.Fabric(accelerator=accelerator, strategy=strategy, devices=devices, precision=precision)
 
-    def fit(self, model, optimizer, dataloader, max_epochs):
+    def fit(self, model, optimizer, dataloader, loss_fn, max_epochs):
         self.fabric.launch()
 
         model, optimizer = self.fabric.setup(model, optimizer)
