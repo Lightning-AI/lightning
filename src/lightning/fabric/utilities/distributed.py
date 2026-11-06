@@ -281,9 +281,10 @@ def _init_dist_connection(
     log.info(f"Initializing distributed: GLOBAL_RANK: {global_rank}, MEMBER: {global_rank + 1}/{world_size}")
     torch.distributed.init_process_group(torch_distributed_backend, rank=global_rank, world_size=world_size, **kwargs)
 
-    if torch_distributed_backend == "nccl":
-        # PyTorch >= 2.4 warns about undestroyed NCCL process group, so we need to do it at program exit
-        atexit.register(_destroy_dist_connection)
+    # Always destroy the process group at exit: PyTorch >= 2.4 warns about undestroyed NCCL
+    # groups, and leaving a gloo group alive can SIGABRT spawn workers on interpreter shutdown
+    # (https://github.com/Lightning-AI/pytorch-lightning/issues/22124).
+    atexit.register(_destroy_dist_connection)
 
     # On rank=0 let everyone know training is starting
     rank_zero_info(
