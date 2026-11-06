@@ -143,7 +143,11 @@ def __scale_batch_reset_params(trainer: "pl.Trainer", steps_per_trial: int) -> N
     if isinstance(loop, pl.loops._FitLoop):
         trainer.limit_train_batches = 1.0
         trainer.limit_val_batches = steps_per_trial
-        trainer.fit_loop.epoch_loop.max_steps = steps_per_trial
+        # `max_steps` is compared against the absolute `global_step` in `_FitLoop.done`,
+        # so it has to carry the offset the trials restore to. Without it a search
+        # started after training has begun is already done on entry and every trial
+        # runs zero batches. `lr_finder` applies the same offset.
+        trainer.fit_loop.epoch_loop.max_steps = steps_per_trial + trainer.global_step
     elif isinstance(loop, pl.loops._EvaluationLoop):
         stage = trainer.state.stage
         assert stage is not None
@@ -401,6 +405,13 @@ def _try_loop_run(trainer: "pl.Trainer", params: dict[str, Any]) -> None:
     assert loop is not None
     loop.load_state_dict(deepcopy(params["loop_state_dict"]))
     loop.restarting = False
+    if isinstance(loop, pl.loops._FitLoop):
+        # The dumped state carries the batch position of the epoch that was in flight
+        # when the search started. Restoring it verbatim starts every trial partway
+        # through the epoch, so a trial whose dataloader is shorter than that position
+        # runs no batches at all. `reset_on_run` clears `current` and leaves the
+        # cumulative `total` alone, which is restored with the rest of the state.
+        loop.epoch_loop.batch_progress.reset_on_run()
     loop.run()
 
 
