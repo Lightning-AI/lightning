@@ -48,17 +48,17 @@ warning_cache = WarningCache()
 
 
 class ModelCheckpoint(Checkpoint):
-    r"""Save the model after every epoch by monitoring a quantity. Every logged metrics are passed to the
-    :class:`~lightning.pytorch.loggers.logger.Logger` for the version it gets saved in the same directory as the
-    checkpoint.
+    r"""Save the model periodically by monitoring a quantity. Every metric logged with
+    :meth:`~lightning.pytorch.core.LightningModule.log` or :meth:`~lightning.pytorch.core.LightningModule.log_dict` is
+    a candidate for the monitor key. For more information, see :ref:`checkpointing`.
 
     After training finishes, use :attr:`best_model_path` to retrieve the path to the
-    best checkpoint file and :attr:`best_model_score` to get its score.
+    best checkpoint file and :attr:`best_model_score` to retrieve its score.
 
     .. note::
-        When using manual optimization with ``every_n_train_steps``, you should save the model state
-        in your ``training_step`` before the optimizer step if you want the checkpoint to reflect
-        the pre-optimization state. Example:
+        When using manual optimization with ``every_n_train_steps`` and monitoring a training-step metric,
+        you should save the model state in your ``training_step`` before the optimizer step if you want the
+        checkpoint to reflect the pre-optimization state. Example:
 
         .. code-block:: python
 
@@ -66,11 +66,11 @@ class ModelCheckpoint(Checkpoint):
                 # ... forward pass, loss calculation, backward pass ...
 
                 # Save model state before optimization
-                if not hasattr(self, 'saved_models'):
+                if not hasattr(self, "saved_models"):
                     self.saved_models = {}
                 self.saved_models[batch_idx] = {
                     k: v.detach().clone()
-                    for k, v in self.layer.state_dict().items()
+                    for k, v in self.state_dict().items()
                 }
 
                 # Then perform optimization
@@ -79,25 +79,22 @@ class ModelCheckpoint(Checkpoint):
                 optimizer.step()
 
                 # Optional: Clean up old states to save memory
-                if batch_idx > 10:  # Keep last 10 states
-                    del self.saved_models[batch_idx - 10]
+                if batch_idx >= 10:  # Keep last 10 states
+                    self.saved_models.pop(batch_idx - 10, None)
 
     Args:
-        dirpath: Directory to save the model file.
-            Example: ``dirpath='my/path/'``.
+        dirpath: directory to save the model file.
 
-            .. warning::
-                In a distributed environment like DDP, it's recommended to provide a `dirpath` to avoid race conditions.
-                When using manual optimization with ``every_n_train_steps``, make sure to save the model state
-                in your training loop as shown in the example above.
+            Example::
 
-            Can be remote file paths such as `s3://mybucket/path/` or 'hdfs://path/'
-            (default: ``None``). If dirpath is ``None``, we only keep the ``k`` best checkpoints
-            in memory, and do not save anything to disk.
+                # custom path
+                # saves a file like: my/path/epoch=0-step=10.ckpt
+                >>> checkpoint_callback = ModelCheckpoint(dirpath='my/path/')
 
-        filename: Checkpoint filename. Can contain named formatting options to be auto-filled.
-            If no name is provided, it will be ``None`` and the checkpoint will be saved to
-            ``{epoch}``.and if the Trainer uses a logger, the path will also contain logger name and version.
+            By default, dirpath is ``None`` and will be set at runtime to the location
+            specified by :class:`~lightning.pytorch.trainer.trainer.Trainer`'s
+            :paramref:`~lightning.pytorch.trainer.trainer.Trainer.default_root_dir` argument,
+            and if the Trainer uses a logger, the path will also contain logger name and version.
 
         filename: checkpoint filename. Can contain named formatting options to be auto-filled.
 
@@ -300,6 +297,7 @@ class ModelCheckpoint(Checkpoint):
         # When using step/time-based checkpointing with a validation-only monitored metric,
         # defer the save until validation has produced the metric
         self._defer_save_until_validation: bool = False
+        self._warning_cache = WarningCache()
 
         self.kth_value: Tensor
         self.dirpath: Optional[_PATH]
@@ -345,86 +343,7 @@ class ModelCheckpoint(Checkpoint):
         batch: Any,
         batch_idx: int,
     ) -> None:
-        """Save checkpoint on train batch end if we meet the criteria for `every_n_train_steps`"""
-        # For manual optimization, we need to handle saving differently
-        if not pl_module.automatic_optimization:
-            # Skip if we don't need to save at this step
-            if self._every_n_train_steps < 1 or (trainer.global_step % self._every_n_train_steps != 0):
-                return
-
-            # Check if we should skip due to trainer/callback state
-            if self._should_skip_saving_checkpoint(trainer):
-                return
-
-            # Get monitor candidates and check if we have the monitored metric
-            monitor_candidates = self._monitor_candidates(trainer)
-            if self.monitor is not None and self.monitor not in monitor_candidates:
-                self._defer_save_until_validation = True
-                return
-
-            # For manual optimization, we save the model state that was captured in training_step
-            # before the optimizer step. The test case saves this state in model.saved_models.
-            if (
-                hasattr(pl_module, "saved_models")
-                and isinstance(pl_module.saved_models, dict)
-                and pl_module.saved_models
-                and hasattr(pl_module, "layer")
-                and isinstance(pl_module.layer, torch.nn.Module)
-            ):
-                # Get the latest saved state
-                saved_models = pl_module.saved_models
-                if not saved_models:  # Check if dictionary is not empty
-                    return
-
-                latest_step = max(saved_models.keys())
-                # Save the checkpoint with the pre-optimization state
-                with torch.no_grad():
-                    # Save the current state
-                    original_state = {k: v.detach().clone() for k, v in pl_module.layer.state_dict().items()}
-                    try:
-                        # Restore the pre-optimization state
-                        saved_state = saved_models[latest_step]
-                        if not isinstance(saved_state, dict):
-                            raise TypeError("Saved model state must be a dictionary")
-
-                        pl_module.layer.load_state_dict(saved_state)
-                        # Save the checkpoint
-                        self._save_topk_checkpoint(trainer, monitor_candidates)
-                        self._save_last_checkpoint(trainer, monitor_candidates)
-                        self._last_time_checked = time.monotonic()
-                    finally:
-                        # Restore the original state
-                        pl_module.layer.load_state_dict(original_state)
-            else:
-                # Fallback to default behavior if no saved state is available
-                if not pl_module.automatic_optimization and trainer.is_global_zero:
-                    rank_zero_warn(
-                        "Using ModelCheckpoint with manual optimization and every_n_train_steps, but no "
-                        "pre-optimization state was saved. The checkpoint will contain the model state "
-                        "AFTER optimization. To save the pre-optimization state, save the model state in "
-                        "training_step before "
-                        "optimizer.step(). "
-                        "Example:\n"
-                        "def training_step(self, batch, batch_idx):\n"
-                        "    # ... forward pass, loss calculation, backward pass ...\n"
-                        "    # Save model state before optimization\n"
-                        "    if not hasattr(self, 'saved_models'):\n"
-                        "        self.saved_models = {}\n"
-                        "    self.saved_models[batch_idx] = {\n"
-                        "        k: v.detach().clone() for k, v in self.layer.state_dict().items()\n"
-                        "    }\n"
-                        "    # Then perform optimization\n"
-                        "    optimizer.zero_grad()\n"
-                        "    self.manual_backward(loss)\n"
-                        "    optimizer.step()",
-                        category=UserWarning,
-                    )
-                self._save_topk_checkpoint(trainer, monitor_candidates)
-                self._save_last_checkpoint(trainer, monitor_candidates)
-                self._last_time_checked = time.monotonic()
-            return
-
-        # Original logic for automatic optimization
+        """Save checkpoint on train batch end if we meet the criteria for `every_n_train_steps`."""
         skip_due_to_state = self._should_skip_saving_checkpoint(trainer)
         skip_batch = self._every_n_train_steps < 1 or (trainer.global_step % self._every_n_train_steps != 0)
 
@@ -481,8 +400,86 @@ class ModelCheckpoint(Checkpoint):
         if skip_due_to_state:
             return
 
+        if not pl_module.automatic_optimization:
+            self._save_manual_opt_checkpoint(trainer, pl_module, monitor_candidates, batch_idx)
+            return
+
         self._save_topk_checkpoint(trainer, monitor_candidates)
         self._save_last_checkpoint(trainer, monitor_candidates)
+
+    def _save_manual_opt_checkpoint(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",
+        monitor_candidates: dict[str, Tensor],
+        batch_idx: int,
+    ) -> None:
+        """Save checkpoint during manual optimization, restoring the pre-step snapshot if available."""
+        target_module: Optional[torch.nn.Module] = None
+        saved_state: Optional[dict[str, Any]] = None
+        saved_models = getattr(pl_module, "saved_models", None)
+
+        if isinstance(saved_models, dict) and saved_models:
+            if batch_idx in saved_models:
+                candidate = saved_models[batch_idx]
+            elif trainer.global_step in saved_models:
+                candidate = saved_models[trainer.global_step]
+            elif (trainer.global_step - 1) in saved_models:
+                candidate = saved_models[trainer.global_step - 1]
+            else:
+                candidate = next(reversed(saved_models.values()))
+
+            if not isinstance(candidate, dict):
+                raise TypeError("Saved model state must be a dictionary")
+
+            module_state_keys = pl_module.state_dict().keys()
+            if candidate.keys() == module_state_keys:
+                target_module = pl_module
+                saved_state = candidate
+            elif (
+                hasattr(pl_module, "layer")
+                and isinstance(pl_module.layer, torch.nn.Module)
+                and candidate.keys() == pl_module.layer.state_dict().keys()
+                and len(module_state_keys) == len(candidate)
+            ):
+                target_module = pl_module.layer
+                saved_state = candidate
+
+        if target_module is not None and saved_state is not None:
+            with torch.no_grad():
+                original_state = {k: v.detach().clone() for k, v in target_module.state_dict().items()}
+                try:
+                    target_module.load_state_dict(saved_state)
+                    self._save_topk_checkpoint(trainer, monitor_candidates)
+                    self._save_last_checkpoint(trainer, monitor_candidates)
+                    self._last_time_checked = time.monotonic()
+                finally:
+                    target_module.load_state_dict(original_state)
+        else:
+            if trainer.is_global_zero:
+                self._warning_cache.warn(
+                    "Using ModelCheckpoint with manual optimization and every_n_train_steps, but no "
+                    "pre-optimization state was saved. The checkpoint will contain the model state "
+                    "AFTER optimization. To save the pre-optimization state, save the model state in "
+                    "training_step before optimizer.step(). "
+                    "Example:\n"
+                    "def training_step(self, batch, batch_idx):\n"
+                    "    # ... forward pass, loss calculation, backward pass ...\n"
+                    "    # Save model state before optimization\n"
+                    "    if not hasattr(self, 'saved_models'):\n"
+                    "        self.saved_models = {}\n"
+                    "    self.saved_models[batch_idx] = {\n"
+                    "        k: v.detach().clone() for k, v in self.state_dict().items()\n"
+                    "    }\n"
+                    "    # Then perform optimization\n"
+                    "    optimizer.zero_grad()\n"
+                    "    self.manual_backward(loss)\n"
+                    "    optimizer.step()",
+                    category=UserWarning,
+                )
+            self._save_topk_checkpoint(trainer, monitor_candidates)
+            self._save_last_checkpoint(trainer, monitor_candidates)
+            self._last_time_checked = time.monotonic()
 
     @override
     def on_train_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
@@ -503,7 +500,9 @@ class ModelCheckpoint(Checkpoint):
         if not self._should_skip_saving_checkpoint(trainer) and not self._should_save_on_train_epoch_end(trainer):
             monitor_candidates = self._monitor_candidates(trainer)
             # If a step/time-triggered save was deferred due to a missing monitored metric,
-            # perform the save now that validation metrics are available.
+            # perform the save now that validation metrics are available. Because validation
+            # evaluates the live post-optimization weights, we save the live model state directly
+            # without swapping in a pre-step training snapshot.
             if self._defer_save_until_validation:
                 self._save_topk_checkpoint(trainer, monitor_candidates)
                 self._save_last_checkpoint(trainer, monitor_candidates)
@@ -591,12 +590,7 @@ class ModelCheckpoint(Checkpoint):
             self._save_none_monitor_checkpoint(trainer, monitor_candidates)
 
     def _save_checkpoint(self, trainer: "pl.Trainer", filepath: str) -> None:
-        """Save the checkpoint to the given filepath.
-
-        For manual optimization, we rely on the fact that the model's training_step method saves the model state before
-        the optimizer step, so we can use that state directly.
-
-        """
+        """Save the checkpoint to the given filepath."""
         trainer.save_checkpoint(filepath, self.save_weights_only)
         self._last_global_step_saved = trainer.global_step
         self._last_checkpoint_saved = filepath
