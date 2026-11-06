@@ -122,6 +122,76 @@ def test_log_momentum_no_momentum_optimizer(tmp_path):
     assert all(k == "lr-ASGD-momentum" for k in lr_monitor.last_momentum_values)
 
 
+def test_log_weight_decay_no_weight_decay_optimizer(tmp_path):
+    """Test that weight decay is not logged for an optimizer without it, and a warning is raised."""
+
+    class LogWeightDecayModel(BoringModel):
+        def configure_optimizers(self):
+            optimizer = optim.Rprop(self.parameters(), lr=1e-2)
+            lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1)
+            return [optimizer], [lr_scheduler]
+
+    model = LogWeightDecayModel()
+    lr_monitor = LearningRateMonitor(log_weight_decay=True)
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        max_epochs=1,
+        limit_val_batches=2,
+        limit_train_batches=5,
+        log_every_n_steps=1,
+        callbacks=[lr_monitor],
+        logger=CSVLogger(tmp_path),
+    )
+    with pytest.warns(RuntimeWarning, match="optimizers do not have weight decay."):
+        trainer.fit(model)
+
+    assert lr_monitor.last_weight_decay_values == {"lr-Rprop-weight_decay": None}
+    assert "lr-Rprop-weight_decay" not in trainer.callback_metrics
+
+
+@pytest.mark.parametrize("schedule_rprop", [True, False])
+def test_log_weight_decay_mixed_optimizers(tmp_path, schedule_rprop):
+    """Test that weight decay is still logged for the optimizer that has it when another optimizer does not."""
+
+    class LogWeightDecayModel(BoringModel):
+        def __init__(self):
+            super().__init__()
+            self.automatic_optimization = False
+
+        def training_step(self, batch, batch_idx):
+            for opt in self.optimizers():
+                loss = self.loss(self.step(batch))
+                opt.zero_grad()
+                self.manual_backward(loss)
+                opt.step()
+
+        def configure_optimizers(self):
+            optimizer1 = optim.AdamW(self.parameters(), lr=1e-2, weight_decay=0.1)
+            optimizer2 = optim.Rprop(self.parameters(), lr=1e-2)
+            lr_schedulers = [optim.lr_scheduler.StepLR(optimizer1, step_size=1)]
+            if schedule_rprop:
+                lr_schedulers.append(optim.lr_scheduler.StepLR(optimizer2, step_size=1))
+            return [optimizer1, optimizer2], lr_schedulers
+
+    model = LogWeightDecayModel()
+    lr_monitor = LearningRateMonitor(log_weight_decay=True)
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        max_epochs=1,
+        limit_val_batches=2,
+        limit_train_batches=5,
+        log_every_n_steps=1,
+        callbacks=[lr_monitor],
+        logger=CSVLogger(tmp_path),
+    )
+    with pytest.warns(RuntimeWarning, match="optimizers do not have weight decay."):
+        trainer.fit(model)
+
+    assert lr_monitor.last_weight_decay_values == {"lr-AdamW-weight_decay": 0.1, "lr-Rprop-weight_decay": None}
+    assert trainer.callback_metrics["lr-AdamW-weight_decay"] == 0.1
+    assert "lr-Rprop-weight_decay" not in trainer.callback_metrics
+
+
 def test_lr_monitor_no_lr_scheduler_single_lr(tmp_path):
     """Test that learning rates are extracted and logged for no lr scheduler."""
 

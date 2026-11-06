@@ -129,22 +129,26 @@ class LearningRateMonitor(Callback):
                 "Cannot use `LearningRateMonitor` callback with `Trainer` that has no logger."
             )
 
-        if self.log_momentum:
+        def _check_no_key(key: str) -> bool:
+            if trainer.lr_scheduler_configs:
+                return any(key not in config.scheduler.optimizer.defaults for config in trainer.lr_scheduler_configs)
 
-            def _check_no_key(key: str) -> bool:
-                if trainer.lr_scheduler_configs:
-                    return any(
-                        key not in config.scheduler.optimizer.defaults for config in trainer.lr_scheduler_configs
-                    )
+            return any(key not in optimizer.defaults for optimizer in trainer.optimizers)
 
-                return any(key not in optimizer.defaults for optimizer in trainer.optimizers)
+        if self.log_momentum and _check_no_key("momentum") and _check_no_key("betas"):
+            rank_zero_warn(
+                "You have set log_momentum=True, but some optimizers do not"
+                " have momentum. This will log a value 0 for the momentum.",
+                category=RuntimeWarning,
+            )
 
-            if _check_no_key("momentum") and _check_no_key("betas"):
-                rank_zero_warn(
-                    "You have set log_momentum=True, but some optimizers do not"
-                    " have momentum. This will log a value 0 for the momentum.",
-                    category=RuntimeWarning,
-                )
+        # Weight decay is logged for optimizers without a scheduler too, so check all of them
+        if self.log_weight_decay and any("weight_decay" not in optimizer.defaults for optimizer in trainer.optimizers):
+            rank_zero_warn(
+                "You have set log_weight_decay=True, but some optimizers do not"
+                " have weight decay. Weight decay will not be logged for them.",
+                category=RuntimeWarning,
+            )
 
         # Find names for schedulers
         names: list[list[str]] = []
@@ -267,7 +271,7 @@ class LearningRateMonitor(Callback):
 
     def _extract_weight_decay(self, param_group: dict[str, Any], name: str) -> dict[str, Any]:
         """Extracts the weight decay statistics from a parameter group."""
-        if not self.log_weight_decay:
+        if not self.log_weight_decay or "weight_decay" not in param_group:
             return {}
 
         weight_decay = param_group["weight_decay"]
