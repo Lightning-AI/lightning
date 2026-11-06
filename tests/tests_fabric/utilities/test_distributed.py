@@ -241,7 +241,7 @@ def test_init_dist_connection_registers_destruction_handler(_, atexit_mock):
     atexit_mock.register.assert_called_once_with(_destroy_dist_connection)
     atexit_mock.reset_mock()
     _init_dist_connection(LightningEnvironment(), "gloo")
-    atexit_mock.register.assert_not_called()
+    atexit_mock.register.assert_called_once_with(_destroy_dist_connection)
 
 
 def test_get_default_process_group_backend_for_device(monkeypatch):
