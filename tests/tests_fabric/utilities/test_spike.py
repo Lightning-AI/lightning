@@ -81,3 +81,41 @@ def test_fabric_spike_detection_integration(tmp_path, global_rank_spike, num_dev
         spike_value=spike_value,
         should_raise=should_raise,
     )
+
+
+@pytest.mark.skipif(not _TORCHMETRICS_GREATER_EQUAL_1_0_0, reason="requires torchmetrics>=1.0.0")
+def test_spike_detection_detaches_and_clones_last_val(monkeypatch):
+    detector = SpikeDetection(mode="min", warmup=1, rtol=2.0)
+
+    x = torch.tensor(2.0, requires_grad=True)
+    loss = x * 1.0  # has grad_fn
+    detector._update_stats(loss)
+
+    assert isinstance(detector.last_val, torch.Tensor)
+    assert not detector.last_val.requires_grad
+    assert detector.last_val.grad_fn is None
+
+    # In-place mutation of the caller's loss buffer must not corrupt last_val
+    loss.detach().fill_(100.0)
+    assert float(detector.last_val.item()) == pytest.approx(2.0)
+
+    # Improving loss and non-finite loss (when finite_only=True) should short-circuit
+    # before invoking running_mean.compute()
+    compute_calls = 0
+    orig_compute = detector.running_mean.compute
+
+    def counting_compute():
+        nonlocal compute_calls
+        compute_calls += 1
+        return orig_compute()
+
+    monkeypatch.setattr(detector.running_mean, "compute", counting_compute)
+
+    assert detector._is_spike(torch.tensor(1.5)) is False
+    assert detector._is_spike(torch.tensor(float("nan"))) is True
+    assert compute_calls == 0
+
+    # Worsening finite loss evaluates running_mean.compute()
+    assert detector._is_spike(torch.tensor(10.0)) is True
+    assert compute_calls == 1
+
