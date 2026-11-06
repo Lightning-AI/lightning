@@ -430,6 +430,36 @@ After training using ZeRO Stage 3, you'll notice that your checkpoints are a dir
 
     This single file checkpoint does not include the optimizer/lr-scheduler states. This means we cannot restore training via the ``trainer.fit(ckpt_path=)`` call. Ensure to keep the sharded checkpoint directory if this is required.
 
+
+.. _deepspeed-universal-checkpointing:
+
+Universal Checkpointing
+-----------------------
+
+`DeepSpeed Universal Checkpointing <https://www.deepspeed.ai/tutorials/universal-checkpointing/>`_ enables checkpoint portability across different hardware topologies and GPU counts. For example, if you trained a model on 8 GPUs and want to resume training on 16 GPUs with both model weights and optimizer states restored, you can convert the saved DeepSpeed checkpoint into the universal checkpoint format and load it.
+
+1. **Save a DeepSpeed checkpoint** during training.
+2. **Convert the checkpoint** to the universal format using DeepSpeed's conversion tool:
+
+   .. code-block:: bash
+
+       python -m deepspeed.checkpoint.ds_to_universal --input_folder path/to/checkpoint.ckpt/checkpoint --output_folder path/to/universal_ckpt/checkpoint
+
+3. **Resume training** with ``load_universal_checkpoint=True`` in ``DeepSpeedStrategy``:
+
+   .. code-block:: python
+
+       from lightning.pytorch import Trainer
+       from lightning.pytorch.strategies import DeepSpeedStrategy
+
+       strategy = DeepSpeedStrategy(stage=2, load_universal_checkpoint=True)
+       trainer = Trainer(accelerator="gpu", devices=16, strategy=strategy)
+       trainer.fit(model, ckpt_path="path/to/universal_ckpt")
+
+.. note::
+
+    Universal Checkpointing requires ``deepspeed >= 0.14.4``.
+
 Custom DeepSpeed Config
 =======================
 

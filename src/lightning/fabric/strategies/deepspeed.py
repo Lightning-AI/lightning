@@ -38,6 +38,7 @@ from lightning.fabric.strategies.registry import _StrategyRegistry
 from lightning.fabric.strategies.strategy import _Sharded
 from lightning.fabric.utilities.cloud_io import get_filesystem
 from lightning.fabric.utilities.distributed import log
+from lightning.fabric.utilities.exceptions import MisconfigurationException
 from lightning.fabric.utilities.imports import _TORCH_GREATER_EQUAL_2_6
 from lightning.fabric.utilities.load import _move_state_into
 from lightning.fabric.utilities.rank_zero import rank_zero_info, rank_zero_warn
@@ -50,6 +51,7 @@ if TYPE_CHECKING:
     from torch.optim.lr_scheduler import LRScheduler
 
 _DEEPSPEED_AVAILABLE = RequirementCache("deepspeed")
+_DEEPSPEED_GREATER_EQUAL_0_14_4 = RequirementCache("deepspeed>=0.14.4")
 _DEEPSPEED_GREATER_EQUAL_0_16 = RequirementCache("deepspeed>=0.16.0")
 
 
@@ -105,6 +107,7 @@ class DeepSpeedStrategy(DDPStrategy, _Sharded):
         process_group_backend: Optional[str] = None,
         timeout: Optional[timedelta] = default_pg_timeout,
         exclude_frozen_parameters: bool = False,
+        load_universal_checkpoint: bool = False,
     ) -> None:
         """Provides capabilities to run training using the DeepSpeed library, with training optimizations for large
         billion parameter models. `For more information: https://pytorch-
@@ -236,6 +239,9 @@ class DeepSpeedStrategy(DDPStrategy, _Sharded):
 
             exclude_frozen_parameters: Exclude frozen parameters when saving checkpoints.
 
+            load_universal_checkpoint: True when loading a Universal Checkpoint directory across different
+                hardware topologies or GPU counts. Requires DeepSpeed >= 0.14.4.
+
         """
         if not _DEEPSPEED_AVAILABLE:
             raise ImportError(
@@ -265,6 +271,8 @@ class DeepSpeedStrategy(DDPStrategy, _Sharded):
         )
         self._backward_sync_control = None  # DeepSpeed handles gradient accumulation internally
         self._timeout: Optional[timedelta] = timeout
+
+        self._load_universal_checkpoint = load_universal_checkpoint
 
         self.config = self._load_config(config)
         if self.config is None:
@@ -300,6 +308,22 @@ class DeepSpeedStrategy(DDPStrategy, _Sharded):
                 allgather_bucket_size=allgather_bucket_size,
                 reduce_bucket_size=reduce_bucket_size,
                 sub_group_size=sub_group_size,
+                load_universal_checkpoint=load_universal_checkpoint,
+            )
+        elif load_universal_checkpoint:
+            self.config.setdefault("checkpoint", {})["load_universal"] = True
+
+        if self.load_universal_checkpoint and not _DEEPSPEED_GREATER_EQUAL_0_14_4:
+            raise MisconfigurationException(
+                "Universal checkpointing requires DeepSpeed >= 0.14.4. "
+                "Please upgrade DeepSpeed: `pip install -U deepspeed`"
+            )
+
+        if load_full_weights and self.load_universal_checkpoint:
+            raise MisconfigurationException(
+                "The arguments `load_full_weights` and `load_universal_checkpoint` cannot both be set to True. "
+                "`load_full_weights` is for loading a single consolidated checkpoint file with ZeRO Stage 3, "
+                "while `load_universal_checkpoint` is for loading a DeepSpeed Universal Checkpoint directory."
             )
 
         import deepspeed
@@ -325,6 +349,18 @@ class DeepSpeedStrategy(DDPStrategy, _Sharded):
         assert isinstance(self.config, dict)
         zero_optimization = self.config.get("zero_optimization")
         return zero_optimization is not None and zero_optimization.get("stage") == 3
+
+    @property
+    def load_universal_checkpoint(self) -> bool:
+        if self._load_universal_checkpoint:
+            return True
+        if isinstance(self.config, dict):
+            return bool(self.config.get("checkpoint", {}).get("load_universal", False))
+        return False
+
+    @load_universal_checkpoint.setter
+    def load_universal_checkpoint(self, value: bool) -> None:
+        self._load_universal_checkpoint = value
 
     @property
     @override
@@ -533,7 +569,7 @@ class DeepSpeedStrategy(DDPStrategy, _Sharded):
         torch.cuda.empty_cache()
         _, client_state = engine.load_checkpoint(
             path,
-            tag="checkpoint",
+            tag=None if self.load_universal_checkpoint else "checkpoint",
             load_optimizer_states=optimzer_state_requested,
             load_lr_scheduler_states=False,
             load_module_strict=strict,
@@ -738,6 +774,7 @@ class DeepSpeedStrategy(DDPStrategy, _Sharded):
         single_submit: bool,
         overlap_events: bool,
         thread_count: int,
+        load_universal_checkpoint: bool = False,
         **zero_kwargs: Any,
     ) -> dict:
         cfg = {
@@ -755,6 +792,8 @@ class DeepSpeedStrategy(DDPStrategy, _Sharded):
                 "thread_count": thread_count,
             },
         }
+        if load_universal_checkpoint:
+            cfg["checkpoint"] = {"load_universal": True}
         if zero_optimization:
             zero_config = zero_kwargs
 
@@ -889,7 +928,14 @@ def _validate_device_index_selection(parallel_devices: list[torch.device]) -> No
 
 def _is_deepspeed_checkpoint(path: str, fs: "AbstractFileSystem") -> bool:
     """Heuristic check whether the path points to a top-level DeepSpeed checkpoint directory."""
-    return fs.isdir(path) and fs.isdir(f"{path.rstrip('/')}/checkpoint")
+    if not fs.isdir(path):
+        return False
+    path_rstrip = path.rstrip("/")
+    return (
+        fs.isdir(f"{path_rstrip}/checkpoint")
+        or fs.isfile(f"{path_rstrip}/latest_universal")
+        or fs.isfile(f"{path_rstrip}/latest")
+    )
 
 
 def _validate_checkpoint_directory(path: _PATH) -> None:
