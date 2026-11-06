@@ -95,18 +95,18 @@ class SpikeDetection:
                 self._update_stats(loss)
 
     def _is_spike(self, loss: torch.Tensor) -> bool:
+        if self.finite_only and not torch.isfinite(loss):
+            return True
+
+        curr_diff = loss - self.last_val
+        if self._is_better(curr_diff):
+            return False
+
         # we might call compute more often than update which is fine as long as the
         # metric has at least one internal value.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             running_val = self.running_mean.compute()
-        curr_diff = loss - self.last_val
-
-        if self.finite_only and not torch.isfinite(loss):
-            return True
-
-        if self._is_better(curr_diff):
-            return False
 
         return self._check_atol(loss, running_val) and self._check_rtol(loss, running_val)
 
@@ -142,7 +142,7 @@ class SpikeDetection:
     def _update_stats(self, val: torch.Tensor) -> None:
         # only update if finite
         self.running_mean.update(val)
-        self.last_val = val
+        self.last_val = val.detach().clone()
 
     def state_dict(self) -> dict[str, Any]:
         return {
