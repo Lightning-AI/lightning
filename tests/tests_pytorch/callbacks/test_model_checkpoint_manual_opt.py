@@ -177,6 +177,157 @@ def test_model_checkpoint_manual_opt_warning():
             if "Using ModelCheckpoint with manual optimization and every_n_train_steps" in str(warning.message)
         ]
 
-        # Verify our warning was raised
-        assert len(manual_opt_warnings) > 0, "Expected warning about manual optimization not found"
+        # Verify our warning was raised exactly once (cached across steps)
+        assert len(manual_opt_warnings) == 1, f"Expected exactly 1 cached warning, got {len(manual_opt_warnings)}"
         assert "The checkpoint will contain the model state AFTER optimization" in manual_opt_warnings[0]
+
+
+def test_model_checkpoint_manual_opt_multi_submodule_whole_state_dict():
+    """Test manual optimization checkpointing with multiple submodules (no `.layer` attribute) using whole-module
+    `self.state_dict()` snapshots."""
+
+    class MultiSubmoduleManualModel(LightningModule):
+        def __init__(self):
+            super().__init__()
+            self.encoder = torch.nn.Linear(3, 4)
+            self.head = torch.nn.Linear(4, 1)
+            self.automatic_optimization = False
+            self.fake_losses = [
+                torch.tensor(1.0),
+                torch.tensor(1.0),
+                torch.tensor(0.0),
+                torch.tensor(1.0),
+            ]
+            self.saved_models = {}
+
+        def training_step(self, batch, batch_idx):
+            hidden = torch.relu(self.encoder(batch[0]))
+            out = self.head(hidden)
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(out, batch[1].float())
+            self.log("loss", self.fake_losses[batch_idx], on_step=True, on_epoch=True, logger=True)
+
+            # Save the entire module state_dict before optimizer.step()
+            self.saved_models[batch_idx] = {k: v.detach().cpu().clone() for k, v in self.state_dict().items()}
+
+            optimizer = self.optimizers()
+            optimizer.zero_grad()
+            self.manual_backward(loss)
+            optimizer.step()
+            return loss
+
+        def configure_optimizers(self):
+            return torch.optim.SGD(self.parameters(), lr=0.1)
+
+    with cleanup_after_test(), tempfile.TemporaryDirectory() as tmpdir:
+        dataset = FakeDataset()
+        train_dataloader = DataLoader(dataset, batch_size=1)
+        model = MultiSubmoduleManualModel()
+        trainer = Trainer(
+            max_epochs=1,
+            callbacks=[
+                ModelCheckpoint(
+                    save_top_k=1,
+                    monitor="loss",
+                    dirpath=tmpdir,
+                    mode="min",
+                    save_last=False,
+                    every_n_train_steps=1,
+                    every_n_epochs=0,
+                    save_on_train_epoch_end=True,
+                    save_weights_only=True,
+                )
+            ],
+            log_every_n_steps=1,
+            num_sanity_val_steps=0,
+            logger=False,
+        )
+        try:
+            trainer.fit(model, train_dataloader)
+        finally:
+            trainer._teardown()
+
+        best_step = 2
+        expected_state = model.saved_models[best_step]
+        best_ckpt = torch.load(trainer.checkpoint_callback.best_model_path, weights_only=True)["state_dict"]
+
+        assert best_ckpt.keys() == expected_state.keys()
+        for key, expected_val in expected_state.items():
+            assert torch.equal(expected_val, best_ckpt[key].cpu()), (
+                f"Submodule parameter {key} did not match pre-optimization snapshot"
+            )
+
+
+def test_model_checkpoint_manual_opt_multi_epoch_sliding_window():
+    """Test that keying `saved_models` by `batch_idx` with leftover higher keys from a previous epoch selects the
+    current `batch_idx` snapshot instead of `max(saved_models.keys())`."""
+
+    class MultiEpochManualModel(LightningModule):
+        def __init__(self):
+            super().__init__()
+            self.encoder = torch.nn.Linear(3, 1)
+            self.automatic_optimization = False
+            # Epoch 0 losses: [1.0, 1.0, 0.5, 1.0]; Epoch 1 losses: [1.0, 0.0, 1.0, 1.0]
+            self.epoch_losses = [
+                [torch.tensor(1.0), torch.tensor(1.0), torch.tensor(0.5), torch.tensor(1.0)],
+                [torch.tensor(1.0), torch.tensor(0.0), torch.tensor(1.0), torch.tensor(1.0)],
+            ]
+            # Simulate leftover high batch_idx key from a prior epoch's sliding window
+            self.saved_models = {
+                99: {k: torch.full_like(v, -999.0) for k, v in self.state_dict().items()},
+            }
+            self.expected_epoch1_batch1 = None
+
+        def training_step(self, batch, batch_idx):
+            out = self.encoder(batch[0])
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(out, batch[1].float())
+            fake_loss = self.epoch_losses[self.current_epoch][batch_idx]
+            self.log("loss", fake_loss, on_step=True, on_epoch=True, logger=True)
+
+            snapshot = {k: v.detach().cpu().clone() for k, v in self.state_dict().items()}
+            self.saved_models[batch_idx] = snapshot
+            if self.current_epoch == 1 and batch_idx == 1:
+                self.expected_epoch1_batch1 = deepcopy(snapshot)
+
+            optimizer = self.optimizers()
+            optimizer.zero_grad()
+            self.manual_backward(loss)
+            optimizer.step()
+            return loss
+
+        def configure_optimizers(self):
+            return torch.optim.SGD(self.parameters(), lr=0.1)
+
+    with cleanup_after_test(), tempfile.TemporaryDirectory() as tmpdir:
+        dataset = FakeDataset()
+        train_dataloader = DataLoader(dataset, batch_size=1)
+        model = MultiEpochManualModel()
+        trainer = Trainer(
+            max_epochs=2,
+            callbacks=[
+                ModelCheckpoint(
+                    save_top_k=1,
+                    monitor="loss",
+                    dirpath=tmpdir,
+                    mode="min",
+                    save_last=False,
+                    every_n_train_steps=1,
+                    every_n_epochs=0,
+                    save_on_train_epoch_end=True,
+                    save_weights_only=True,
+                )
+            ],
+            log_every_n_steps=1,
+            num_sanity_val_steps=0,
+            logger=False,
+        )
+        try:
+            trainer.fit(model, train_dataloader)
+        finally:
+            trainer._teardown()
+
+        best_ckpt = torch.load(trainer.checkpoint_callback.best_model_path, weights_only=True)["state_dict"]
+        assert model.expected_epoch1_batch1 is not None
+        for key, expected_val in model.expected_epoch1_batch1.items():
+            assert torch.equal(expected_val, best_ckpt[key].cpu()), (
+                f"Expected snapshot from epoch 1 batch 1, but got stale state for {key}"
+            )
