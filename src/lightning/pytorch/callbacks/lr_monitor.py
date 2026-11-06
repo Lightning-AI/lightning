@@ -142,7 +142,8 @@ class LearningRateMonitor(Callback):
                 category=RuntimeWarning,
             )
 
-        if self.log_weight_decay and _check_no_key("weight_decay"):
+        # Weight decay is logged for optimizers without a scheduler too, so check all of them
+        if self.log_weight_decay and any("weight_decay" not in optimizer.defaults for optimizer in trainer.optimizers):
             rank_zero_warn(
                 "You have set log_weight_decay=True, but some optimizers do not"
                 " have weight decay. Weight decay will not be logged for them.",

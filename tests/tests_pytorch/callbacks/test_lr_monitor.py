@@ -149,7 +149,8 @@ def test_log_weight_decay_no_weight_decay_optimizer(tmp_path):
     assert "lr-Rprop-weight_decay" not in trainer.callback_metrics
 
 
-def test_log_weight_decay_mixed_optimizers(tmp_path):
+@pytest.mark.parametrize("schedule_rprop", [True, False])
+def test_log_weight_decay_mixed_optimizers(tmp_path, schedule_rprop):
     """Test that weight decay is still logged for the optimizer that has it when another optimizer does not."""
 
     class LogWeightDecayModel(BoringModel):
@@ -167,9 +168,10 @@ def test_log_weight_decay_mixed_optimizers(tmp_path):
         def configure_optimizers(self):
             optimizer1 = optim.AdamW(self.parameters(), lr=1e-2, weight_decay=0.1)
             optimizer2 = optim.Rprop(self.parameters(), lr=1e-2)
-            lr_scheduler1 = optim.lr_scheduler.StepLR(optimizer1, step_size=1)
-            lr_scheduler2 = optim.lr_scheduler.StepLR(optimizer2, step_size=1)
-            return [optimizer1, optimizer2], [lr_scheduler1, lr_scheduler2]
+            lr_schedulers = [optim.lr_scheduler.StepLR(optimizer1, step_size=1)]
+            if schedule_rprop:
+                lr_schedulers.append(optim.lr_scheduler.StepLR(optimizer2, step_size=1))
+            return [optimizer1, optimizer2], lr_schedulers
 
     model = LogWeightDecayModel()
     lr_monitor = LearningRateMonitor(log_weight_decay=True)
