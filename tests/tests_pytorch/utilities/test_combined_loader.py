@@ -681,3 +681,15 @@ def test_combined_loader_reset_uses_del_not_shutdown_workers():
 
     iterator_ref._shutdown_workers.assert_not_called()
     assert dataloader._iterator is None
+
+
+def test_sequential_many_empty_iterables_no_recursion_error():
+    """Verify _Sequential advances across many consecutive empty iterables iteratively without RecursionError."""
+    import sys
+
+    num_empty = sys.getrecursionlimit() + 200
+    iterables = [[] for _ in range(num_empty)] + [[42, 99]] + [[] for _ in range(num_empty)]
+    combined_loader = CombinedLoader(iterables, mode="sequential")
+    results = list(combined_loader)
+    assert results == [(42, 0, num_empty), (99, 1, num_empty)]
+

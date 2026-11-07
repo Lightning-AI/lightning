@@ -128,22 +128,24 @@ class _Sequential(_ModeIterator):
     @override
     def __next__(self) -> _ITERATOR_RETURN:
         n = len(self.iterables)
-        if n == 0 or self._iterator_idx >= n:
-            raise StopIteration
+        while True:
+            if n == 0 or self._iterator_idx >= n:
+                raise StopIteration
 
-        # if limits are set, go to the correct iterator
-        if self.limits is not None:
-            while self.limits[self._iterator_idx] <= self._idx:
+            # if limits are set, go to the correct iterator
+            if self.limits is not None:
+                while self.limits[self._iterator_idx] <= self._idx:
+                    self._use_next_iterator()
+                    if self._iterator_idx >= n:
+                        raise StopIteration
+
+            try:
+                out = next(self.iterators[0])
+                break
+            except StopIteration:
+                # try the next iterator
                 self._use_next_iterator()
-                if self._iterator_idx >= n:
-                    raise StopIteration
 
-        try:
-            out = next(self.iterators[0])
-        except StopIteration:
-            # try the next iterator
-            self._use_next_iterator()
-            return self.__next__()
         index = self._idx
         self._idx += 1
         return out, index, self._iterator_idx
