@@ -1322,3 +1322,92 @@ def test_deepspeed_load_checkpoint_validate_path(tmp_path):
     checkpoint_path.touch()
     with pytest.raises(FileNotFoundError, match=f"Try to load using this parent directory instead: {tmp_path}"):
         strategy.load_checkpoint(checkpoint_path=checkpoint_path)
+
+
+@RunIf(deepspeed=True)
+def test_deepspeed_universal_checkpointing_config():
+    """Ensure universal checkpointing config is set when load_universal_checkpoint=True and clean by default."""
+    strategy = DeepSpeedStrategy(load_universal_checkpoint=True)
+    assert strategy.load_universal_checkpoint is True
+    assert strategy.config.get("checkpoint") == {"load_universal": True}
+
+    default_strategy = DeepSpeedStrategy()
+    assert default_strategy.load_universal_checkpoint is False
+    assert "checkpoint" not in default_strategy.config
+
+
+@RunIf(deepspeed=True)
+def test_deepspeed_universal_checkpointing_custom_config():
+    """Ensure universal checkpointing interacts cleanly with custom DeepSpeed configurations."""
+    custom_cfg = {"checkpoint": {"load_universal": True, "tag_validation": "Ignore"}}
+    strategy = DeepSpeedStrategy(config=custom_cfg)
+    assert strategy.load_universal_checkpoint is True
+    assert strategy.config["checkpoint"] == {"load_universal": True, "tag_validation": "Ignore"}
+
+    custom_cfg2 = {"train_batch_size": 16}
+    strategy2 = DeepSpeedStrategy(config=custom_cfg2, load_universal_checkpoint=True)
+    assert strategy2.load_universal_checkpoint is True
+    assert strategy2.config["checkpoint"] == {"load_universal": True}
+    assert strategy2.config["train_batch_size"] == 16
+
+
+@RunIf(deepspeed=True)
+def test_deepspeed_universal_checkpointing_conflicts_load_full_weights():
+    """Ensure load_full_weights and load_universal_checkpoint cannot both be enabled."""
+    with pytest.raises(MisconfigurationException, match="cannot both be set to True"):
+        DeepSpeedStrategy(load_full_weights=True, load_universal_checkpoint=True)
+
+    with pytest.raises(MisconfigurationException, match="cannot both be set to True"):
+        DeepSpeedStrategy(load_full_weights=True, config={"checkpoint": {"load_universal": True}})
+
+
+@RunIf(deepspeed=True)
+def test_deepspeed_universal_checkpointing_unsupported_version():
+    """Ensure an exception is raised when DeepSpeed version is < 0.14.4."""
+    with (
+        mock.patch("lightning.fabric.strategies.deepspeed._DEEPSPEED_GREATER_EQUAL_0_14_4", False),
+        mock.patch("lightning.pytorch.strategies.deepspeed._DEEPSPEED_GREATER_EQUAL_0_14_4", False),
+    ):
+        with pytest.raises(MisconfigurationException, match="requires DeepSpeed >= 0.14.4"):
+            DeepSpeedStrategy(load_universal_checkpoint=True)
+
+
+@RunIf(deepspeed=True)
+def test_deepspeed_universal_checkpoint_validation_and_load(tmp_path):
+    """Ensure universal checkpoints with latest_universal pass validation and load correctly."""
+    from lightning.pytorch.trainer.states import TrainerFn
+
+    strategy = DeepSpeedStrategy(load_universal_checkpoint=True)
+    strategy._lightning_module = mock.MagicMock()
+    strategy._lightning_module.trainer.state.fn = TrainerFn.FITTING
+    strategy._lightning_module.strict_loading = True
+
+    ckpt_dir = tmp_path / "universal_ckpt"
+    ckpt_dir.mkdir()
+    step_dir = ckpt_dir / "step_1000"
+    step_dir.mkdir()
+    (ckpt_dir / "latest_universal").write_text("step_1000")
+
+    # Subfolder error message pointing to parent
+    with pytest.raises(FileNotFoundError, match=f"Try to load using this parent directory instead: {ckpt_dir}"):
+        strategy.load_checkpoint(checkpoint_path=step_dir)
+
+    # Valid load through engine
+    engine_mock = mock.MagicMock()
+    fake_client_state = {"epoch": 1, "global_step": 100}
+    engine_mock.load_checkpoint.return_value = (str(step_dir), fake_client_state)
+    strategy.model = engine_mock
+
+    loaded_state = strategy.load_checkpoint(ckpt_dir)
+    assert loaded_state == fake_client_state
+    engine_mock.load_checkpoint.assert_called_once_with(
+        ckpt_dir,
+        load_optimizer_states=True,
+        load_lr_scheduler_states=False,
+        load_module_strict=True,
+    )
+
+    # When engine returns None client_state, MisconfigurationException is raised
+    engine_mock.load_checkpoint.return_value = (None, None)
+    with pytest.raises(MisconfigurationException, match="DeepSpeed was unable to load the checkpoint"):
+        strategy.load_checkpoint(ckpt_dir)

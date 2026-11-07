@@ -35,6 +35,7 @@ from lightning.fabric.plugins.collectives.torch_collective import default_pg_tim
 from lightning.fabric.strategies import _StrategyRegistry
 from lightning.fabric.strategies.deepspeed import (
     _DEEPSPEED_AVAILABLE,
+    _DEEPSPEED_GREATER_EQUAL_0_14_4,
     _DEEPSPEED_GREATER_EQUAL_0_16,
     _format_precision_config,
     _validate_checkpoint_directory,
@@ -125,6 +126,7 @@ class DeepSpeedStrategy(DDPStrategy):
         process_group_backend: Optional[str] = None,
         timeout: Optional[timedelta] = default_pg_timeout,
         exclude_frozen_parameters: bool = False,
+        load_universal_checkpoint: bool = False,
     ) -> None:
         """Provides capabilities to run training using the DeepSpeed library, with training optimizations for large
         billion parameter models. *For more information:* :ref:`deepspeed_advanced`.
@@ -257,6 +259,9 @@ class DeepSpeedStrategy(DDPStrategy):
 
             exclude_frozen_parameters: Exclude frozen parameters when saving checkpoints.
 
+            load_universal_checkpoint: True when loading a Universal Checkpoint directory across different
+                hardware topologies or GPU counts. Requires DeepSpeed >= 0.14.4.
+
         """
         if not _DEEPSPEED_AVAILABLE:
             raise MisconfigurationException(
@@ -285,6 +290,8 @@ class DeepSpeedStrategy(DDPStrategy):
             process_group_backend=process_group_backend,
         )
         self._timeout: Optional[timedelta] = timeout
+
+        self._load_universal_checkpoint = load_universal_checkpoint
 
         self.config = self._load_config(config)
         if self.config is None:
@@ -320,7 +327,24 @@ class DeepSpeedStrategy(DDPStrategy):
                 allgather_bucket_size=allgather_bucket_size,
                 reduce_bucket_size=reduce_bucket_size,
                 sub_group_size=sub_group_size,
+                load_universal_checkpoint=load_universal_checkpoint,
             )
+        elif load_universal_checkpoint:
+            self.config.setdefault("checkpoint", {})["load_universal"] = True
+
+        if self.load_universal_checkpoint and not _DEEPSPEED_GREATER_EQUAL_0_14_4:
+            raise MisconfigurationException(
+                "Universal checkpointing requires DeepSpeed >= 0.14.4. "
+                "Please upgrade DeepSpeed: `pip install -U deepspeed`"
+            )
+
+        if load_full_weights and self.load_universal_checkpoint:
+            raise MisconfigurationException(
+                "The arguments `load_full_weights` and `load_universal_checkpoint` cannot both be set to True. "
+                "`load_full_weights` is for loading a single consolidated checkpoint file with ZeRO Stage 3, "
+                "while `load_universal_checkpoint` is for loading a DeepSpeed Universal Checkpoint directory."
+            )
+
         import deepspeed
 
         self._config_initialized = False
@@ -490,6 +514,18 @@ class DeepSpeedStrategy(DDPStrategy):
         assert isinstance(self.config, dict)
         zero_optimization = self.config.get("zero_optimization")
         return zero_optimization is not None and zero_optimization.get("stage") == 3
+
+    @property
+    def load_universal_checkpoint(self) -> bool:
+        if self._load_universal_checkpoint:
+            return True
+        if isinstance(self.config, dict):
+            return bool(self.config.get("checkpoint", {}).get("load_universal", False))
+        return False
+
+    @load_universal_checkpoint.setter
+    def load_universal_checkpoint(self, value: bool) -> None:
+        self._load_universal_checkpoint = value
 
     def _initialize_deepspeed_train(self, model: Module) -> None:
         optimizer, scheduler = None, None
@@ -869,6 +905,7 @@ class DeepSpeedStrategy(DDPStrategy):
         single_submit: bool,
         overlap_events: bool,
         thread_count: int,
+        load_universal_checkpoint: bool = False,
         **zero_kwargs: Any,
     ) -> dict:
         cfg = {
@@ -886,6 +923,8 @@ class DeepSpeedStrategy(DDPStrategy):
                 "thread_count": thread_count,
             },
         }
+        if load_universal_checkpoint:
+            cfg["checkpoint"] = {"load_universal": True}
         if zero_optimization:
             zero_config = zero_kwargs
 

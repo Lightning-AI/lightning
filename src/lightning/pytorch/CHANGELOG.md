@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Added `load_universal_checkpoint` to `DeepSpeedStrategy` to enable loading DeepSpeed Universal Checkpoints across different GPU counts and topologies ([#20065](https://github.com/Lightning-AI/pytorch-lightning/issues/20065))
+
 - Added `suggest_integrations` flag to `Trainer` to control whether optional integration suggestions (e.g., litmodels, litlogger) are shown in logs ([#21632](https://github.com/Lightning-AI/pytorch-lightning/pull/21632))
 
 - Fixed ``ModelParallelStrategy`` single-file checkpointing when ``torch.compile`` wraps the model so optimizer states no longer raise ``KeyError`` during save ([#21357](https://github.com/Lightning-AI/pytorch-lightning/issues/21357))

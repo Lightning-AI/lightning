@@ -22,6 +22,7 @@ from torch.optim import Optimizer
 
 from lightning.fabric.accelerators import CPUAccelerator, CUDAAccelerator
 from lightning.fabric.strategies import DeepSpeedStrategy
+from lightning.fabric.utilities.exceptions import MisconfigurationException
 from tests_fabric.helpers.runif import RunIf
 
 
@@ -484,3 +485,110 @@ def test_validate_parallel_devices_indices(device_indices):
     ):
         strategy.setup_environment()
     accelerator.setup_device.assert_called_once_with(torch.device("cuda", device_indices[0]))
+
+
+@RunIf(deepspeed=True)
+def test_deepspeed_universal_checkpointing_config():
+    """Ensure universal checkpointing config is set when load_universal_checkpoint=True and clean by default."""
+    strategy = DeepSpeedStrategy(load_universal_checkpoint=True)
+    assert strategy.load_universal_checkpoint is True
+    assert strategy.config.get("checkpoint") == {"load_universal": True}
+
+    default_strategy = DeepSpeedStrategy()
+    assert default_strategy.load_universal_checkpoint is False
+    assert "checkpoint" not in default_strategy.config
+
+
+@RunIf(deepspeed=True)
+def test_deepspeed_universal_checkpointing_custom_config():
+    """Ensure universal checkpointing interacts cleanly with custom DeepSpeed configurations."""
+    custom_cfg = {"checkpoint": {"load_universal": True, "tag_validation": "Ignore"}}
+    strategy = DeepSpeedStrategy(config=custom_cfg)
+    assert strategy.load_universal_checkpoint is True
+    assert strategy.config["checkpoint"] == {"load_universal": True, "tag_validation": "Ignore"}
+
+    custom_cfg2 = {"train_batch_size": 16}
+    strategy2 = DeepSpeedStrategy(config=custom_cfg2, load_universal_checkpoint=True)
+    assert strategy2.load_universal_checkpoint is True
+    assert strategy2.config["checkpoint"] == {"load_universal": True}
+    assert strategy2.config["train_batch_size"] == 16
+
+
+@RunIf(deepspeed=True)
+def test_deepspeed_universal_checkpointing_conflicts_load_full_weights():
+    """Ensure load_full_weights and load_universal_checkpoint cannot both be enabled."""
+    with pytest.raises(MisconfigurationException, match="cannot both be set to True"):
+        DeepSpeedStrategy(load_full_weights=True, load_universal_checkpoint=True)
+
+    with pytest.raises(MisconfigurationException, match="cannot both be set to True"):
+        DeepSpeedStrategy(load_full_weights=True, config={"checkpoint": {"load_universal": True}})
+
+
+@RunIf(deepspeed=True)
+def test_deepspeed_universal_checkpointing_unsupported_version():
+    """Ensure an exception is raised when DeepSpeed version is < 0.14.4."""
+    with mock.patch("lightning.fabric.strategies.deepspeed._DEEPSPEED_GREATER_EQUAL_0_14_4", False):
+        with pytest.raises(MisconfigurationException, match="requires DeepSpeed >= 0.14.4"):
+            DeepSpeedStrategy(load_universal_checkpoint=True)
+
+
+def test_validate_checkpoint_directory_universal_path(tmp_path):
+    """Ensure _validate_checkpoint_directory accepts directories with latest_universal."""
+    from lightning.fabric.strategies.deepspeed import _validate_checkpoint_directory
+
+    ckpt_dir = tmp_path / "universal_ckpt"
+    ckpt_dir.mkdir()
+    step_dir = ckpt_dir / "step_1000"
+    step_dir.mkdir()
+    (ckpt_dir / "latest_universal").write_text("step_1000")
+
+    # Valid parent directory passes
+    _validate_checkpoint_directory(ckpt_dir)
+
+    # Subfolder suggests parent directory
+    expected_msg = f"Try to load using this parent directory instead: {escape(str(ckpt_dir))}"
+    with pytest.raises(FileNotFoundError, match=expected_msg):
+        _validate_checkpoint_directory(step_dir)
+
+
+@RunIf(deepspeed=True)
+def test_fabric_deepspeed_load_universal_checkpoint(tmp_path):
+    """Ensure Fabric DeepSpeedStrategy passes tag=None when load_universal_checkpoint=True."""
+    from deepspeed import DeepSpeedEngine
+
+    ckpt_dir = tmp_path / "universal_ckpt"
+    ckpt_dir.mkdir()
+    (ckpt_dir / "latest_universal").write_text("checkpoint")
+    (ckpt_dir / "checkpoint").mkdir()
+
+    engine = Mock(spec=DeepSpeedEngine)
+    fake_client_state = {"model_state": 123}
+    engine.load_checkpoint.return_value = (str(ckpt_dir / "checkpoint"), fake_client_state)
+
+    state = {"model": engine}
+
+    # When load_universal_checkpoint=True, tag=None is passed
+    strategy_universal = DeepSpeedStrategy(load_universal_checkpoint=True)
+    with mock.patch("lightning.fabric.strategies.deepspeed._get_deepspeed_engines_from_state", return_value=[engine]):
+        res = strategy_universal.load_checkpoint(ckpt_dir, state=state)
+        assert res == fake_client_state
+        engine.load_checkpoint.assert_called_with(
+            ckpt_dir,
+            tag=None,
+            load_optimizer_states=False,
+            load_lr_scheduler_states=False,
+            load_module_strict=True,
+        )
+
+    # When load_universal_checkpoint=False, tag='checkpoint' is passed
+    strategy_default = DeepSpeedStrategy()
+    with mock.patch("lightning.fabric.strategies.deepspeed._get_deepspeed_engines_from_state", return_value=[engine]):
+        res = strategy_default.load_checkpoint(ckpt_dir, state=state)
+        assert res == fake_client_state
+        engine.load_checkpoint.assert_called_with(
+            ckpt_dir,
+            tag="checkpoint",
+            load_optimizer_states=False,
+            load_lr_scheduler_states=False,
+            load_module_strict=True,
+        )
